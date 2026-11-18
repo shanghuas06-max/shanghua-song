@@ -20,6 +20,11 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+
+  .hardlock-doc-sheet {
+    font-family: "Times New Roman", Times, Georgia, "Noto Serif JP", "Noto Serif SC", serif;
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 /* Print Styles — fixes v2 CSS hidden conflict so print works cleanly across all browsers */

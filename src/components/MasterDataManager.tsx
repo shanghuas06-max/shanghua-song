@@ -1,9 +1,20 @@
-import React, { useMemo, useState } from 'react';
-import { Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  Download,
+  FileSpreadsheet,
+  Pencil,
+  Plus,
+  Search,
+  Tag,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import type {
   BankAccount,
   CurrencyCode,
   Customer,
+  CustomerProductPrice,
   IncotermCode,
   LogisticsProvider,
   MasterTab,
@@ -13,6 +24,11 @@ import type {
 } from '../types/erp';
 import type { UiDictionary } from '../i18n/uiTranslations';
 import { formatMoney } from '../utils/exportCalculations';
+import {
+  parseProductImportFile,
+  triggerProductTemplateDownload,
+  type ProductImportResult,
+} from '../utils/importExportUtils';
 
 interface MasterDataManagerProps {
   customers: Customer[];
@@ -29,7 +45,9 @@ interface MasterDataManagerProps {
   onSaveBank: (bank: BankAccount) => void;
   onDeleteBank: (id: string) => void;
   onSaveProduct: (product: Product) => void;
+  onBatchImportProducts?: (products: Product[]) => Promise<void> | void;
   onDeleteProduct: (id: string) => void;
+  initialTab?: MasterTab;
   t: UiDictionary;
 }
 
@@ -48,18 +66,30 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
   onSaveBank,
   onDeleteBank,
   onSaveProduct,
+  onBatchImportProducts,
   onDeleteProduct,
+  initialTab = 'customers',
   t,
 }) => {
-  const [activeTab, setActiveTab] = useState<MasterTab>('customers');
+  const [activeTab, setActiveTab] = useState<MasterTab>(initialTab);
   const [search, setSearch] = useState('');
 
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [customPriceProductId, setCustomPriceProductId] = useState<string>('');
+  const [customPriceValue, setCustomPriceValue] = useState<number>(0);
+
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [editingLogistics, setEditingLogistics] =
     useState<LogisticsProvider | null>(null);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  const [importPreview, setImportPreview] = useState<ProductImportResult | null>(
+    null,
+  );
+  const [importSubmitting, setImportSubmitting] = useState(false);
+  const [importToast, setImportToast] = useState<string | null>(null);
 
   const tabs: { id: MasterTab; label: string; count: number }[] = [
     { id: 'customers', label: t.masterCustomers, count: customers.length },
@@ -135,10 +165,25 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
     [products, q],
   );
 
+  const openCustomerModal = (cust: Customer) => {
+    const firstProd = products[0];
+    const existingForFirst = (cust.customPrices ?? []).find(
+      (cp) => cp.productId === firstProd?.id,
+    );
+    setCustomPriceProductId(firstProd?.id ?? '');
+    setCustomPriceValue(
+      existingForFirst?.unitPrice ?? firstProd?.unitPrice ?? 0,
+    );
+    setEditingCustomer({
+      ...cust,
+      customPrices: Array.isArray(cust.customPrices) ? cust.customPrices : [],
+    });
+  };
+
   const handleOpenCreate = () => {
     const uid = `${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
     if (activeTab === 'customers') {
-      setEditingCustomer({
+      openCustomerModal({
         id: `cust-${uid}`,
         code: `CUST-${customers.length + 1}`,
         name: '',
@@ -150,6 +195,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
         defaultCurrency: 'USD',
         defaultIncoterm: 'FOB',
         notifyParty: '',
+        customPrices: [],
       });
     } else if (activeTab === 'suppliers') {
       setEditingSupplier({
@@ -161,6 +207,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
         contactName: '',
         email: '',
         phone: '',
+        fax: '',
         taxOrExporterId: '',
         signatoryName: '',
         signatoryTitle: 'Export Manager',
@@ -195,19 +242,82 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
         sku: '',
         nameEn: '',
         nameLocal: '',
+        size: '',
+        material: '',
+        surfaceFinish: '',
         hsCode: '7318.16.00',
-        unit: 'PCS',
+        unit: 'SETS',
         unitPrice: 1,
         currency: 'USD',
         unitNetWeightKg: 0.05,
         unitGrossWeightKg: 0.055,
         defaultUnitsPerCarton: 100,
-        cartonLengthCm: 40,
-        cartonWidthCm: 30,
-        cartonHeightCm: 20,
+        cartonLengthCm: 33,
+        cartonWidthCm: 25,
+        cartonHeightCm: 12,
         originCountry: 'JAPAN',
       });
     }
+  };
+
+  const handleImportFileSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await parseProductImportFile(file, products);
+      setImportPreview(result);
+      setImportToast(null);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview || importPreview.products.length === 0) return;
+    setImportSubmitting(true);
+    try {
+      if (onBatchImportProducts) {
+        await onBatchImportProducts(importPreview.products);
+      } else {
+        importPreview.products.forEach((p) => onSaveProduct(p));
+      }
+      setImportToast(
+        t.importSuccessToast.replace(
+          '{count}',
+          String(importPreview.products.length),
+        ),
+      );
+      setImportPreview(null);
+    } finally {
+      setImportSubmitting(false);
+    }
+  };
+
+  const handleUpsertCustomerCustomPrice = () => {
+    if (!editingCustomer || !customPriceProductId) return;
+    const price = Math.max(0, Number(customPriceValue) || 0);
+    const current = editingCustomer.customPrices ?? [];
+    const exists = current.some((cp) => cp.productId === customPriceProductId);
+    const next: CustomerProductPrice[] = exists
+      ? current.map((cp) =>
+          cp.productId === customPriceProductId
+            ? { ...cp, unitPrice: price }
+            : cp,
+        )
+      : [...current, { productId: customPriceProductId, unitPrice: price }];
+    setEditingCustomer({ ...editingCustomer, customPrices: next });
+  };
+
+  const handleRemoveCustomerCustomPrice = (productId: string) => {
+    if (!editingCustomer) return;
+    setEditingCustomer({
+      ...editingCustomer,
+      customPrices: (editingCustomer.customPrices ?? []).filter(
+        (cp) => cp.productId !== productId,
+      ),
+    });
   };
 
   return (
@@ -221,7 +331,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
           <p className="text-xs text-slate-500 mt-0.5">{t.orderPartiesTitle}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -230,9 +340,40 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
               placeholder={t.searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-9 pl-8 pr-3 w-64 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+              className="h-9 pl-8 pr-3 w-56 sm:w-64 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
           </div>
+
+          {activeTab === 'products' && (
+            <>
+              <button
+                type="button"
+                onClick={triggerProductTemplateDownload}
+                className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{t.btnDownloadTemplate}</span>
+              </button>
+
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleImportFileSelected}
+                className="sr-only"
+                aria-label={t.btnImportProducts}
+              />
+              <button
+                type="button"
+                onClick={() => importFileRef.current?.click()}
+                className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors whitespace-nowrap"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>{t.btnImportProducts}</span>
+              </button>
+            </>
+          )}
+
           <button
             type="button"
             onClick={handleOpenCreate}
@@ -243,6 +384,23 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
           </button>
         </div>
       </div>
+
+      {importToast && activeTab === 'products' && (
+        <div
+          role="status"
+          className="px-3.5 py-2.5 text-xs font-medium bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-md flex items-center justify-between gap-2"
+        >
+          <span>{importToast}</span>
+          <button
+            type="button"
+            onClick={() => setImportToast(null)}
+            aria-label="Dismiss import notice"
+            className="text-emerald-700 hover:text-emerald-900"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Category Tabs */}
       <div
@@ -304,12 +462,22 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                       <div className="text-slate-400">{c.email}</div>
                     </td>
                     <td className="py-3 px-4 font-mono-tabular text-slate-700">
-                      {c.defaultIncoterm} · {c.defaultCurrency}
+                      <div>
+                        {c.defaultIncoterm} · {c.defaultCurrency}
+                      </div>
+                      {(c.customPrices?.length ?? 0) > 0 && (
+                        <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200 rounded">
+                          <Tag className="w-3 h-3" />
+                          <span>
+                            {c.customPrices!.length} {t.customPricingBadge}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
                         label={c.name}
-                        onEdit={() => setEditingCustomer(c)}
+                        onEdit={() => openCustomerModal(c)}
                         onDelete={() => onDeleteCustomer(c.id)}
                         disableDelete={customers.length <= 1}
                         editText={t.btnEdit}
@@ -658,6 +826,150 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                 </select>
               </div>
             </div>
+            {/* Customer-Specific Pricing Section (一客一价) */}
+            <div className="pt-3 border-t border-slate-200 space-y-2.5">
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+                  <Tag className="w-3.5 h-3.5 text-amber-600" />
+                  <span>{t.customPricingTitle}</span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  {t.customPricingHint}
+                </p>
+              </div>
+
+              {products.length > 0 && (
+                <div className="flex flex-wrap items-end gap-2 bg-slate-50 p-2.5 rounded-md border border-slate-200">
+                  <div className="flex-1 min-w-[180px]">
+                    <label
+                      htmlFor="cust-price-product"
+                      className="block text-[11px] font-medium text-slate-600 mb-1"
+                    >
+                      {t.customPricingSelectProduct}
+                    </label>
+                    <select
+                      id="cust-price-product"
+                      value={customPriceProductId}
+                      onChange={(e) => {
+                        const pid = e.target.value;
+                        setCustomPriceProductId(pid);
+                        const existingCp = (
+                          editingCustomer.customPrices ?? []
+                        ).find((cp) => cp.productId === pid);
+                        const prod = products.find((p) => p.id === pid);
+                        setCustomPriceValue(
+                          existingCp?.unitPrice ?? prod?.unitPrice ?? 0,
+                        );
+                      }}
+                      className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded"
+                    >
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.sku} · {p.nameEn} ({t.customPricingBaseLabel}:{' '}
+                          {formatMoney(p.unitPrice, p.currency)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="w-28">
+                    <label
+                      htmlFor="cust-price-value"
+                      className="block text-[11px] font-medium text-slate-600 mb-1"
+                    >
+                      {t.customPricingPriceLabel}
+                    </label>
+                    <input
+                      id="cust-price-value"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={customPriceValue}
+                      onChange={(e) =>
+                        setCustomPriceValue(Number(e.target.value) || 0)
+                      }
+                      className="w-full h-8 px-2 text-xs text-right font-mono-tabular bg-white border border-slate-300 rounded"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleUpsertCustomerCustomPrice}
+                    className="h-8 px-3 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 whitespace-nowrap"
+                  >
+                    {t.customPricingAddBtn}
+                  </button>
+                </div>
+              )}
+
+              {(editingCustomer.customPrices ?? []).length === 0 ? (
+                <div className="text-[11px] text-slate-400 italic py-1">
+                  {t.customPricingEmpty}
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-md max-h-40 overflow-y-auto">
+                  {(editingCustomer.customPrices ?? []).map((cp) => {
+                    const prod = products.find((p) => p.id === cp.productId);
+                    return (
+                      <div
+                        key={cp.productId}
+                        className="px-3 py-2 flex items-center justify-between gap-2 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono-tabular font-semibold text-slate-800 truncate">
+                            {prod?.sku ?? cp.productId}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {prod?.nameEn ?? ''} · {t.customPricingBaseLabel}:{' '}
+                            {prod
+                              ? formatMoney(prod.unitPrice, prod.currency)
+                              : '—'}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            aria-label={`${t.customPricingPriceLabel} ${prod?.sku ?? cp.productId}`}
+                            value={cp.unitPrice}
+                            onChange={(e) => {
+                              const nextVal = Math.max(
+                                0,
+                                Number(e.target.value) || 0,
+                              );
+                              setEditingCustomer({
+                                ...editingCustomer,
+                                customPrices: (
+                                  editingCustomer.customPrices ?? []
+                                ).map((entry) =>
+                                  entry.productId === cp.productId
+                                    ? { ...entry, unitPrice: nextVal }
+                                    : entry,
+                                ),
+                              });
+                            }}
+                            className="w-24 h-7 px-2 text-right font-mono-tabular text-xs border border-slate-300 rounded bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleRemoveCustomerCustomPrice(cp.productId)
+                            }
+                            aria-label={`${t.btnDelete} ${prod?.sku ?? cp.productId}`}
+                            className="p-1 text-slate-400 hover:text-red-600 rounded"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <ModalFooter
               onCancel={() => setEditingCustomer(null)}
               saveText={t.btnSave}
@@ -720,7 +1032,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
               }
               required
             />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <FieldInput
                 id="sup-exp-id"
                 label={t.colExporterId}
@@ -738,6 +1050,14 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                 value={editingSupplier.phone}
                 onChange={(v) =>
                   setEditingSupplier({ ...editingSupplier, phone: v })
+                }
+              />
+              <FieldInput
+                id="sup-fax"
+                label={t.lblFax}
+                value={editingSupplier.fax ?? ''}
+                onChange={(v) =>
+                  setEditingSupplier({ ...editingSupplier, fax: v })
                 }
               />
             </div>
@@ -1047,6 +1367,32 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
               }
             />
             <div className="grid grid-cols-3 gap-3">
+              <FieldInput
+                id="prod-size"
+                label={t.lblSize}
+                value={editingProduct.size ?? ''}
+                onChange={(v) =>
+                  setEditingProduct({ ...editingProduct, size: v })
+                }
+              />
+              <FieldInput
+                id="prod-material"
+                label={t.lblMaterial}
+                value={editingProduct.material ?? ''}
+                onChange={(v) =>
+                  setEditingProduct({ ...editingProduct, material: v })
+                }
+              />
+              <FieldInput
+                id="prod-finish"
+                label={t.lblSurfaceFinish}
+                value={editingProduct.surfaceFinish ?? ''}
+                onChange={(v) =>
+                  setEditingProduct({ ...editingProduct, surfaceFinish: v })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
               <FieldNumber
                 id="prod-price"
                 label={t.colUnitPrice}
@@ -1109,6 +1455,88 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
               cancelText={t.btnCancel}
             />
           </form>
+        </ModalDialog>
+      )}
+      {/* Bulk Product Import Preview Modal */}
+      {importPreview && (
+        <ModalDialog
+          title={t.importPreviewTitle}
+          onClose={() => setImportPreview(null)}
+        >
+          <div className="space-y-3 text-xs">
+            <div className="flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-md">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+              <div className="text-slate-700 leading-relaxed">
+                {importPreview.products.length > 0
+                  ? t.importPreviewSummary
+                      .replace('{total}', String(importPreview.products.length))
+                      .replace('{created}', String(importPreview.createdCount))
+                      .replace('{updated}', String(importPreview.updatedCount))
+                  : t.importNoValidRows}
+              </div>
+            </div>
+
+            {importPreview.errors.length > 0 && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md space-y-1">
+                <div className="font-semibold text-amber-900">
+                  {t.importSkippedErrors}
+                </div>
+                <ul className="list-disc pl-4 text-amber-800 space-y-0.5 max-h-28 overflow-y-auto">
+                  {importPreview.errors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {importPreview.products.length > 0 && (
+              <div className="border border-slate-200 rounded-md max-h-56 overflow-y-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                      <th className="py-2 px-2.5">{t.colSku}</th>
+                      <th className="py-2 px-2.5">{t.colProductName}</th>
+                      <th className="py-2 px-2.5 text-right">{t.colUnitPrice}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {importPreview.products.slice(0, 50).map((p) => (
+                      <tr key={p.id}>
+                        <td className="py-1.5 px-2.5 font-mono-tabular font-semibold text-slate-800">
+                          {p.sku}
+                        </td>
+                        <td className="py-1.5 px-2.5 text-slate-700">
+                          {p.nameEn}
+                          {p.size ? ` (${p.size})` : ''}
+                        </td>
+                        <td className="py-1.5 px-2.5 text-right font-mono-tabular">
+                          {formatMoney(p.unitPrice, p.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setImportPreview(null)}
+                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50"
+              >
+                {t.btnCancel}
+              </button>
+              <button
+                type="button"
+                disabled={importPreview.products.length === 0 || importSubmitting}
+                onClick={handleConfirmImport}
+                className="px-4 py-2 text-xs font-semibold text-white bg-emerald-700 rounded-md hover:bg-emerald-800 disabled:opacity-40"
+              >
+                {t.importConfirmBtn}
+              </button>
+            </div>
+          </div>
         </ModalDialog>
       )}
     </div>

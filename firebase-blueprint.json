@@ -76,10 +76,11 @@
         "defaultCurrency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
         "defaultIncoterm": { "type": "string", "enum": ["EXW", "FCA", "FOB", "CFR", "CIF", "CPT", "CIP", "DAP", "DPU", "DDP"] },
         "notifyParty": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "customPrices": { "type": "array", "description": "Customer-specific product prices keyed by productId (max 100)." },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "ownerId", "code", "name", "country", "address", "contactName", "email", "phone", "defaultCurrency", "defaultIncoterm", "notifyParty", "createdAt", "updatedAt"]
+      "required": ["id", "ownerId", "code", "name", "country", "address", "contactName", "email", "phone", "defaultCurrency", "defaultIncoterm", "notifyParty", "customPrices", "createdAt", "updatedAt"]
     },
     "SupplierRecord": {
       "title": "SupplierRecord",
@@ -95,13 +96,14 @@
         "contactName": { "type": "string", "minLength": 0, "maxLength": 240 },
         "email": { "type": "string", "minLength": 0, "maxLength": 240 },
         "phone": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "fax": { "type": "string", "minLength": 0, "maxLength": 240 },
         "taxOrExporterId": { "type": "string", "minLength": 0, "maxLength": 100 },
         "signatoryName": { "type": "string", "minLength": 0, "maxLength": 240 },
         "signatoryTitle": { "type": "string", "minLength": 0, "maxLength": 240 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "ownerId", "code", "name", "country", "address", "contactName", "email", "phone", "taxOrExporterId", "signatoryName", "signatoryTitle", "createdAt", "updatedAt"]
+      "required": ["id", "ownerId", "code", "name", "country", "address", "contactName", "email", "phone", "fax", "taxOrExporterId", "signatoryName", "signatoryTitle", "createdAt", "updatedAt"]
     },
     "LogisticsProviderRecord": {
       "title": "LogisticsProviderRecord",
@@ -153,6 +155,9 @@
         "sku": { "type": "string", "minLength": 1, "maxLength": 80 },
         "nameEn": { "type": "string", "minLength": 1, "maxLength": 1000 },
         "nameLocal": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "size": { "type": "string", "minLength": 0, "maxLength": 80 },
+        "material": { "type": "string", "minLength": 0, "maxLength": 80 },
+        "surfaceFinish": { "type": "string", "minLength": 0, "maxLength": 80 },
         "hsCode": { "type": "string", "minLength": 0, "maxLength": 80 },
         "unit": { "type": "string", "minLength": 1, "maxLength": 40 },
         "unitPrice": { "type": "number" },
@@ -167,7 +172,7 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "ownerId", "sku", "nameEn", "nameLocal", "hsCode", "unit", "unitPrice", "currency", "unitNetWeightKg", "unitGrossWeightKg", "defaultUnitsPerCarton", "cartonLengthCm", "cartonWidthCm", "cartonHeightCm", "originCountry", "createdAt", "updatedAt"]
+      "required": ["id", "ownerId", "sku", "nameEn", "nameLocal", "size", "material", "surfaceFinish", "hsCode", "unit", "unitPrice", "currency", "unitNetWeightKg", "unitGrossWeightKg", "defaultUnitsPerCarton", "cartonLengthCm", "cartonWidthCm", "cartonHeightCm", "originCountry", "createdAt", "updatedAt"]
     },
     "OrderRecord": {
       "title": "OrderRecord",
@@ -183,7 +188,14 @@
         "currency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
         "supplierId": { "type": "string", "minLength": 0, "maxLength": 128 },
         "customerId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "billToCustomerId": { "type": "string", "minLength": 0, "maxLength": 128 },
         "bankAccountId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "itemHeader": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "palletCount": { "type": "number" },
+        "emptyCartons": { "type": "number" },
+        "palletVolumeDetails": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "surfaceFootnotes": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "packingRows": { "type": "array", "description": "Optional pallet-by-pallet packing list breakdown rows (max 100)." },
         "items": { "type": "array", "description": "Bounded list of up to 50 order line items." },
         "shipping": { "type": "object", "description": "Shipping mode, Incoterm 2020, ports, tracking, and marks." },
         "costs": { "type": "object", "description": "Packing, freight, insurance, destination, and duty costs." },
@@ -193,7 +205,7 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "ownerId", "invoiceNo", "poNo", "orderDate", "paymentTerms", "currency", "supplierId", "customerId", "bankAccountId", "items", "shipping", "costs", "remarks", "orderCreatedAt", "orderUpdatedAt", "createdAt", "updatedAt"]
+      "required": ["id", "ownerId", "invoiceNo", "poNo", "orderDate", "paymentTerms", "currency", "supplierId", "customerId", "billToCustomerId", "bankAccountId", "itemHeader", "palletCount", "emptyCartons", "palletVolumeDetails", "surfaceFootnotes", "packingRows", "items", "shipping", "costs", "remarks", "orderCreatedAt", "orderUpdatedAt", "createdAt", "updatedAt"]
     },
     "AuditLogRecord": {
       "title": "AuditLogRecord",

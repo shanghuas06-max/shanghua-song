@@ -11,6 +11,9 @@ import {
   Printer,
   Check,
   Minus,
+  ChevronDown,
+  ChevronUp,
+  Layers,
 } from 'lucide-react';
 import type {
   BankAccount,
@@ -20,6 +23,7 @@ import type {
   IncotermCode,
   LogisticsProvider,
   OrderItem,
+  PackingListRow,
   Product,
   Supplier,
   TransportMode,
@@ -29,6 +33,11 @@ import {
   calculateOrderSummary,
   formatMoney,
 } from '../utils/exportCalculations';
+import { buildPackingListDisplayRows, resolveItemSpecs } from '../utils/documentHelpers';
+import {
+  applyCustomerPricingToItems,
+  resolveCustomerProductPrice,
+} from '../utils/importExportUtils';
 
 interface OrderWorkspaceProps {
   order: ExportOrder | undefined;
@@ -88,6 +97,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
   const [selectedProductId, setSelectedProductId] = useState<string>(
     products[0]?.id ?? '',
   );
+  const [showDocLayoutEditor, setShowDocLayoutEditor] = useState<boolean>(false);
 
   const effectiveSelectedProductId = products.some(
     (p) => p.id === selectedProductId,
@@ -107,6 +117,11 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
   );
 
   const activeMode = order?.shipping.mode ?? 'SEA';
+
+  const currentCustomer = useMemo(
+    () => customers.find((c) => c.id === order?.customerId),
+    [customers, order?.customerId],
+  );
 
   const matchingProviders = useMemo(() => {
     const preferred = logisticsProviders.filter((lp) =>
@@ -214,10 +229,16 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       return;
     }
     const shortMark = cust.name.split(' ')[0].toUpperCase();
+    const repricedItems = applyCustomerPricingToItems(
+      order.items,
+      cust,
+      products,
+    );
     onChangeOrder({
       ...order,
       customerId,
       currency: cust.defaultCurrency,
+      items: repricedItems,
       shipping: {
         ...order.shipping,
         incoterm: cust.defaultIncoterm,
@@ -254,15 +275,22 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       products.find((p) => p.id === effectiveSelectedProductId) ?? products[0];
     if (!prod) return;
     const defaultQty = prod.defaultUnitsPerCarton || 100;
+    const { unitPrice: resolvedUnitPrice } = resolveCustomerProductPrice(
+      currentCustomer,
+      prod,
+    );
     const newItem: OrderItem = {
       id: `oi-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       productId: prod.id,
       sku: prod.sku,
       description: prod.nameEn,
+      size: prod.size ?? '',
+      material: prod.material ?? '',
+      surfaceFinish: prod.surfaceFinish ?? '',
       hsCode: prod.hsCode,
       quantity: defaultQty,
       unit: prod.unit,
-      unitPrice: prod.unitPrice,
+      unitPrice: resolvedUnitPrice,
       cartons: 1,
       unitNetWeightKg: prod.unitNetWeightKg,
       unitGrossWeightKg: prod.unitGrossWeightKg,
@@ -270,6 +298,9 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       cartonWidthCm: prod.cartonWidthCm,
       cartonHeightCm: prod.cartonHeightCm,
       originCountry: prod.originCountry,
+      palletNo: String(order.items.length + 1),
+      cartonRange: '',
+      setsPerCarton: defaultQty,
     };
     updateOrder({ items: [...order.items, newItem] });
   };
@@ -280,19 +311,95 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       productId: '',
       sku: '',
       description: '',
+      size: '',
+      material: '',
+      surfaceFinish: '',
       hsCode: '7318.16.00',
       quantity: 100,
-      unit: 'PCS',
+      unit: 'SETS',
       unitPrice: 1,
       cartons: 1,
       unitNetWeightKg: 0.05,
       unitGrossWeightKg: 0.055,
-      cartonLengthCm: 40,
-      cartonWidthCm: 30,
-      cartonHeightCm: 20,
+      cartonLengthCm: 33,
+      cartonWidthCm: 25,
+      cartonHeightCm: 12,
       originCountry: 'JAPAN',
+      palletNo: String(order.items.length + 1),
+      cartonRange: '',
+      setsPerCarton: 100,
     };
     updateOrder({ items: [...order.items, newItem] });
+  };
+
+  const handleAutoBuildPackingRows = () => {
+    const generated = buildPackingListDisplayRows(order.items, products).map(
+      (r): PackingListRow => ({
+        id: r.id,
+        palletNo: r.palletNo,
+        ctnNo: r.ctnNo,
+        itemNo: r.itemNo,
+        type: r.type,
+        size: r.size,
+        material: r.material,
+        surfaceFinish: r.surfaceFinish,
+        setsPerCarton: r.setsPerCarton,
+        cartonCount: r.cartonCount,
+        sharedCarton: r.sharedCarton ?? false,
+        qty: r.qty,
+        unitWeightKg: r.unitWeightKg,
+        totalWeightKg: r.totalWeightKg,
+      }),
+    );
+    updateOrder({ packingRows: generated });
+  };
+
+  const handleAddPackingRow = () => {
+    const existing = order.packingRows ?? [];
+    const firstItem = order.items[0];
+    const specs = firstItem
+      ? resolveItemSpecs(firstItem, products.find((p) => p.id === firstItem.productId))
+      : { size: '', material: '', surfaceFinish: '' };
+    const newRow: PackingListRow = {
+      id: `pk-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      palletNo: existing[existing.length - 1]?.palletNo || '1',
+      ctnNo: existing[existing.length - 1]?.ctnNo || '1',
+      itemNo: 1,
+      type: firstItem?.sku || '',
+      size: specs.size,
+      material: specs.material,
+      surfaceFinish: specs.surfaceFinish,
+      setsPerCarton: 100,
+      cartonCount: 1,
+      sharedCarton: true,
+      qty: 100,
+      unitWeightKg: firstItem?.unitNetWeightKg || 0.05,
+      totalWeightKg: Number((100 * (firstItem?.unitNetWeightKg || 0.05)).toFixed(1)),
+    };
+    updateOrder({ packingRows: [...existing, newRow] });
+  };
+
+  const handleUpdatePackingRow = (rowId: string, patch: Partial<PackingListRow>) => {
+    const nextRows = (order.packingRows ?? []).map((r) => {
+      if (r.id !== rowId) return r;
+      const merged = { ...r, ...patch };
+      if (
+        typeof patch.qty === 'number' ||
+        typeof patch.unitWeightKg === 'number'
+      ) {
+        merged.totalWeightKg = Number(
+          ((merged.qty || 0) * (merged.unitWeightKg || 0)).toFixed(1),
+        );
+      }
+      return merged;
+    });
+    updateOrder({ packingRows: nextRows });
+  };
+
+  const handleDeletePackingRow = (rowId: string) => {
+    updateOrder({
+      packingRows: (order.packingRows ?? []).filter((r) => r.id !== rowId),
+    });
   };
 
   const handleItemChange = (itemId: string, patch: Partial<OrderItem>) => {
@@ -399,7 +506,31 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
 
       {/* Section 1: Order Header & Registered Master Data Parties */}
       <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div>
+            <label
+              htmlFor="order-bill-to"
+              className="block text-xs font-medium text-slate-700 mb-1.5"
+            >
+              {t.selectBillTo}
+            </label>
+            <select
+              id="order-bill-to"
+              value={order.billToCustomerId ?? ''}
+              onChange={(e) =>
+                updateOrder({ billToCustomerId: e.target.value })
+              }
+              className="w-full h-9 px-3 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+            >
+              <option value="">{t.billToSameAsCustomer}</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.code} · {c.name} ({c.country})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label
               htmlFor="order-customer"
@@ -571,11 +702,15 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               onChange={(e) => setSelectedProductId(e.target.value)}
               className="h-9 px-3 text-xs bg-white border border-slate-300 rounded-md max-w-[260px]"
             >
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.sku} · {p.nameEn}
-                </option>
-              ))}
+              {products.map((p) => {
+                const resolved = resolveCustomerProductPrice(currentCustomer, p);
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.sku} · {p.nameEn} ({resolved.unitPrice}
+                    {resolved.isCustom ? ` · ${t.customPricingBadge}` : ''})
+                  </option>
+                );
+              })}
             </select>
             <button
               type="button"
@@ -621,7 +756,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                   const calc = summary.lineItems[idx];
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/70">
-                      <td className="py-2 px-3 align-top">
+                      <td className="py-2 px-3 align-top space-y-1">
                         <input
                           type="text"
                           aria-label={`${t.colSku} row ${idx + 1}`}
@@ -631,8 +766,34 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                           }
                           className="w-full h-8 px-2 text-xs font-mono-tabular border border-slate-200 rounded bg-white"
                         />
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            placeholder={t.lblPalletNo}
+                            aria-label={`${t.lblPalletNo} row ${idx + 1}`}
+                            value={item.palletNo ?? ''}
+                            onChange={(e) =>
+                              handleItemChange(item.id, {
+                                palletNo: e.target.value,
+                              })
+                            }
+                            className="w-16 h-7 px-1.5 text-[11px] font-mono-tabular border border-slate-200 rounded bg-slate-50"
+                          />
+                          <input
+                            type="text"
+                            placeholder={t.lblCtnNo}
+                            aria-label={`${t.lblCtnNo} row ${idx + 1}`}
+                            value={item.cartonRange ?? ''}
+                            onChange={(e) =>
+                              handleItemChange(item.id, {
+                                cartonRange: e.target.value,
+                              })
+                            }
+                            className="flex-1 min-w-0 h-7 px-1.5 text-[11px] font-mono-tabular border border-slate-200 rounded bg-slate-50"
+                          />
+                        </div>
                       </td>
-                      <td className="py-2 px-3 align-top">
+                      <td className="py-2 px-3 align-top space-y-1">
                         <input
                           type="text"
                           aria-label={`${t.colDescription} row ${idx + 1}`}
@@ -644,6 +805,42 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                           }
                           className="w-full h-8 px-2 text-xs border border-slate-200 rounded bg-white"
                         />
+                        <div className="grid grid-cols-3 gap-1">
+                          <input
+                            type="text"
+                            placeholder={t.lblSize}
+                            aria-label={`${t.lblSize} row ${idx + 1}`}
+                            value={item.size ?? ''}
+                            onChange={(e) =>
+                              handleItemChange(item.id, { size: e.target.value })
+                            }
+                            className="h-7 px-1.5 text-[11px] font-mono-tabular border border-slate-200 rounded bg-slate-50"
+                          />
+                          <input
+                            type="text"
+                            placeholder={t.lblMaterial}
+                            aria-label={`${t.lblMaterial} row ${idx + 1}`}
+                            value={item.material ?? ''}
+                            onChange={(e) =>
+                              handleItemChange(item.id, {
+                                material: e.target.value,
+                              })
+                            }
+                            className="h-7 px-1.5 text-[11px] font-mono-tabular border border-slate-200 rounded bg-slate-50"
+                          />
+                          <input
+                            type="text"
+                            placeholder={t.lblSurfaceFinish}
+                            aria-label={`${t.lblSurfaceFinish} row ${idx + 1}`}
+                            value={item.surfaceFinish ?? ''}
+                            onChange={(e) =>
+                              handleItemChange(item.id, {
+                                surfaceFinish: e.target.value,
+                              })
+                            }
+                            className="h-7 px-1.5 text-[11px] font-mono-tabular border border-slate-200 rounded bg-slate-50"
+                          />
+                        </div>
                       </td>
                       <td className="py-2 px-3 align-top">
                         <input
@@ -695,6 +892,24 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                           }
                           className="w-full h-8 px-2 text-xs text-right font-mono-tabular border border-slate-200 rounded bg-white"
                         />
+                        {(() => {
+                          const linkedProd = products.find(
+                            (p) => p.id === item.productId,
+                          );
+                          if (!linkedProd) return null;
+                          const resolved = resolveCustomerProductPrice(
+                            currentCustomer,
+                            linkedProd,
+                          );
+                          if (!resolved.isCustom) return null;
+                          return (
+                            <div className="mt-1 text-right">
+                              <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 rounded">
+                                {t.customPricingBadge}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-2 px-3 align-top">
                         <input
@@ -1251,6 +1466,345 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
           </div>
         </section>
       </div>
+
+      {/* Section 4: Document Header & Pallet Packing Layout (Collapsible) */}
+      <section className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowDocLayoutEditor((v) => !v)}
+          aria-expanded={showDocLayoutEditor}
+          className="w-full px-5 py-3.5 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-blue-700" />
+            <span className="text-sm font-semibold text-slate-900">
+              {t.docLayoutSectionTitle}
+            </span>
+          </div>
+          {showDocLayoutEditor ? (
+            <ChevronUp className="w-4 h-4 text-slate-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-slate-500" />
+          )}
+        </button>
+
+        {showDocLayoutEditor && (
+          <div className="px-5 pb-5 pt-3 border-t border-slate-200 space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label
+                  htmlFor="doc-item-header"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  {t.lblItemHeader}
+                </label>
+                <input
+                  id="doc-item-header"
+                  type="text"
+                  value={order.itemHeader ?? ''}
+                  placeholder="HARDLOCK NUT (HLN)"
+                  onChange={(e) => updateOrder({ itemHeader: e.target.value })}
+                  className="w-full h-9 px-3 text-sm bg-white border border-slate-300 rounded-md"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="doc-pallet-count"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  {t.lblPalletCount}
+                </label>
+                <input
+                  id="doc-pallet-count"
+                  type="number"
+                  min={0}
+                  value={order.palletCount ?? 0}
+                  onChange={(e) =>
+                    updateOrder({ palletCount: Number(e.target.value) || 0 })
+                  }
+                  className="w-full h-9 px-3 text-sm font-mono-tabular bg-white border border-slate-300 rounded-md"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="doc-empty-cartons"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  {t.lblEmptyCartons}
+                </label>
+                <input
+                  id="doc-empty-cartons"
+                  type="number"
+                  min={0}
+                  value={order.emptyCartons ?? 0}
+                  onChange={(e) =>
+                    updateOrder({ emptyCartons: Number(e.target.value) || 0 })
+                  }
+                  className="w-full h-9 px-3 text-sm font-mono-tabular bg-white border border-slate-300 rounded-md"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label
+                  htmlFor="doc-pallet-volumes"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  {t.lblPalletVolumeDetails}
+                </label>
+                <textarea
+                  id="doc-pallet-volumes"
+                  rows={3}
+                  placeholder="Pallet 1-9: 8.058M3 (1.1x1.1x0.74m)"
+                  value={order.palletVolumeDetails ?? ''}
+                  onChange={(e) =>
+                    updateOrder({ palletVolumeDetails: e.target.value })
+                  }
+                  className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-md"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="doc-surface-footnotes"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  {t.lblSurfaceFootnotes}
+                </label>
+                <textarea
+                  id="doc-surface-footnotes"
+                  rows={3}
+                  placeholder="*CR3:ZINC TRIVALENT CHROMATE&#10;*MP:MANGANESE PHOSPHATE"
+                  value={order.surfaceFootnotes ?? ''}
+                  onChange={(e) =>
+                    updateOrder({ surfaceFootnotes: e.target.value })
+                  }
+                  className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-md"
+                />
+              </div>
+            </div>
+
+            {/* Custom Packing List Rows Editor (supports mixed cartons & pallet merges) */}
+            <div className="pt-3 border-t border-slate-100 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-slate-900">
+                    {t.packingRowsEditorTitle}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {t.packingRowsHint}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoBuildPackingRows}
+                    className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+                  >
+                    {t.btnAutoBuildPackingRows}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddPackingRow}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50"
+                  >
+                    {t.btnAddPackingRow}
+                  </button>
+                  {(order.packingRows?.length ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => updateOrder({ packingRows: [] })}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200"
+                    >
+                      {t.btnClearPackingRows}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {(order.packingRows?.length ?? 0) > 0 && (
+                <div className="overflow-x-auto border border-slate-200 rounded-md">
+                  <table className="w-full text-left border-collapse min-w-[820px] text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                        <th className="py-2 px-2 w-16">{t.lblPalletNo}</th>
+                        <th className="py-2 px-2 w-24">{t.lblCtnNo}</th>
+                        <th className="py-2 px-2 w-14 text-right">#</th>
+                        <th className="py-2 px-2">Type / SKU</th>
+                        <th className="py-2 px-2 w-20">{t.lblSize}</th>
+                        <th className="py-2 px-2 w-24">{t.lblMaterial}</th>
+                        <th className="py-2 px-2 w-16">{t.lblSurfaceFinish}</th>
+                        <th className="py-2 px-2 w-20 text-right">{t.lblSetsPerCtn}</th>
+                        <th className="py-2 px-2 w-16 text-right">{t.colCartons}</th>
+                        <th className="py-2 px-2 w-20 text-right">{t.colQty}</th>
+                        <th className="py-2 px-2 w-20 text-right">U.W</th>
+                        <th className="py-2 px-2 w-10" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(order.packingRows ?? []).map((row) => (
+                        <tr key={row.id}>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.palletNo}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  palletNo: e.target.value,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.ctnNo}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  ctnNo: e.target.value,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="number"
+                              min={1}
+                              value={row.itemNo}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  itemNo: Number(e.target.value) || 1,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 text-right font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.type}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  type: e.target.value,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.size}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  size: e.target.value,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.material}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  material: e.target.value,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.surfaceFinish}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  surfaceFinish: e.target.value,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="number"
+                              min={0}
+                              value={row.setsPerCarton}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  setsPerCarton: Number(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 text-right font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="number"
+                              min={0}
+                              value={row.cartonCount}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  cartonCount: Number(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 text-right font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="number"
+                              min={0}
+                              value={row.qty}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  qty: Number(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 text-right font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.0001"
+                              value={row.unitWeightKg}
+                              onChange={(e) =>
+                                handleUpdatePackingRow(row.id, {
+                                  unitWeightKg: Number(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full h-7 px-1.5 text-right font-mono-tabular border border-slate-200 rounded"
+                            />
+                          </td>
+                          <td className="p-1.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePackingRow(row.id)}
+                              aria-label={`Delete packing row ${row.id}`}
+                              className="p-1 text-slate-400 hover:text-red-600"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 };

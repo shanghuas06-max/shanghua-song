@@ -20,6 +20,11 @@ export type NavSection = 'order' | 'documents' | 'master' | 'history';
 export type MasterTab = 'customers' | 'suppliers' | 'logistics' | 'banks' | 'products';
 export type DocumentTab = 'invoice' | 'packing' | 'casemark' | 'all';
 
+export interface CustomerProductPrice {
+  productId: string;
+  unitPrice: number;
+}
+
 export interface Customer {
   id: string;
   code: string;
@@ -32,6 +37,7 @@ export interface Customer {
   defaultCurrency: CurrencyCode;
   defaultIncoterm: IncotermCode;
   notifyParty?: string;
+  customPrices?: CustomerProductPrice[];
 }
 
 export interface Supplier {
@@ -43,6 +49,7 @@ export interface Supplier {
   contactName: string;
   email: string;
   phone: string;
+  fax?: string;
   taxOrExporterId: string;
   signatoryName: string;
   signatoryTitle: string;
@@ -77,6 +84,9 @@ export interface Product {
   sku: string;
   nameEn: string;
   nameLocal: string;
+  size?: string;
+  material?: string;
+  surfaceFinish?: string;
   hsCode: string;
   unit: string;
   unitPrice: number;
@@ -95,6 +105,9 @@ export interface OrderItem {
   productId: string;
   sku: string;
   description: string;
+  size?: string;
+  material?: string;
+  surfaceFinish?: string;
   hsCode: string;
   quantity: number;
   unit: string;
@@ -106,6 +119,26 @@ export interface OrderItem {
   cartonWidthCm: number;
   cartonHeightCm: number;
   originCountry: string;
+  palletNo?: string;
+  cartonRange?: string;
+  setsPerCarton?: number;
+}
+
+export interface PackingListRow {
+  id: string;
+  palletNo: string;
+  ctnNo: string;
+  itemNo: number;
+  type: string;
+  size: string;
+  material: string;
+  surfaceFinish: string;
+  setsPerCarton: number;
+  cartonCount: number;
+  sharedCarton?: boolean;
+  qty: number;
+  unitWeightKg: number;
+  totalWeightKg: number;
 }
 
 export interface OrderShipping {
@@ -145,7 +178,14 @@ export interface ExportOrder {
   currency: CurrencyCode;
   supplierId: string;
   customerId: string;
+  billToCustomerId?: string;
   bankAccountId: string;
+  itemHeader?: string;
+  palletCount?: number;
+  emptyCartons?: number;
+  palletVolumeDetails?: string;
+  surfaceFootnotes?: string;
+  packingRows?: PackingListRow[];
   items: OrderItem[];
   shipping: OrderShipping;
   costs: OrderCosts;

@@ -3,11 +3,13 @@ import type {
   BankAccount,
   CurrencyCode,
   Customer,
+  CustomerProductPrice,
   DocLanguage,
   ExportOrder,
   IncotermCode,
   LogisticsProvider,
   OrderItem,
+  PackingListRow,
   Product,
   Supplier,
   TransportMode,
@@ -26,7 +28,9 @@ export const BLUEPRINT_LIMITS = {
   UNIT_MAX: 40,
   ORIGIN_MAX: 120,
   MAX_ORDER_ITEMS: 50,
+  MAX_PACKING_ROWS: 100,
   MAX_MODES: 4,
+  MAX_CUSTOM_PRICES: 100,
 } as const;
 
 const VALID_CURRENCIES: CurrencyCode[] = ['USD', 'JPY', 'EUR', 'CNY'];
@@ -101,6 +105,25 @@ export function clampDocLang(val: unknown, fallback: DocLanguage = 'en'): DocLan
   return VALID_DOC_LANGS.includes(val as DocLanguage) ? (val as DocLanguage) : fallback;
 }
 
+export function sanitizeCustomerCustomPrices(
+  prices: unknown,
+): CustomerProductPrice[] {
+  if (!Array.isArray(prices)) return [];
+  const deduped = new Map<string, number>();
+  for (const entry of prices) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rawId = (entry as { productId?: unknown }).productId;
+    if (!isValidFirestoreId(rawId)) continue;
+    const price = nonNegNum((entry as { unitPrice?: unknown }).unitPrice, 0);
+    deduped.set(rawId, price);
+    if (deduped.size >= BLUEPRINT_LIMITS.MAX_CUSTOM_PRICES) break;
+  }
+  return Array.from(deduped.entries()).map(([productId, unitPrice]) => ({
+    productId,
+    unitPrice,
+  }));
+}
+
 export function sanitizeCustomerPayload(c: Customer, ownerId: string) {
   return {
     id: sanitizeId(c.id, 'cust'),
@@ -115,6 +138,7 @@ export function sanitizeCustomerPayload(c: Customer, ownerId: string) {
     defaultCurrency: clampCurrency(c.defaultCurrency),
     defaultIncoterm: clampIncoterm(c.defaultIncoterm),
     notifyParty: clampStr(c.notifyParty, BLUEPRINT_LIMITS.LONG_MAX),
+    customPrices: sanitizeCustomerCustomPrices(c.customPrices),
   };
 }
 
@@ -129,6 +153,7 @@ export function sanitizeSupplierPayload(s: Supplier, ownerId: string) {
     contactName: clampStr(s.contactName, BLUEPRINT_LIMITS.MEDIUM_MAX),
     email: clampStr(s.email, BLUEPRINT_LIMITS.MEDIUM_MAX),
     phone: clampStr(s.phone, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    fax: clampStr(s.fax, BLUEPRINT_LIMITS.MEDIUM_MAX),
     taxOrExporterId: clampStr(s.taxOrExporterId, 100),
     signatoryName: clampStr(s.signatoryName, BLUEPRINT_LIMITS.MEDIUM_MAX),
     signatoryTitle: clampStr(s.signatoryTitle, BLUEPRINT_LIMITS.MEDIUM_MAX),
@@ -178,6 +203,9 @@ export function sanitizeProductPayload(p: Product, ownerId: string) {
     sku: clampNonEmptyStr(p.sku, BLUEPRINT_LIMITS.SHORT_MAX, 'SKU'),
     nameEn: clampNonEmptyStr(p.nameEn, BLUEPRINT_LIMITS.LONG_MAX, 'Product'),
     nameLocal: clampStr(p.nameLocal, BLUEPRINT_LIMITS.LONG_MAX),
+    size: clampStr(p.size, BLUEPRINT_LIMITS.SHORT_MAX),
+    material: clampStr(p.material, BLUEPRINT_LIMITS.SHORT_MAX),
+    surfaceFinish: clampStr(p.surfaceFinish, BLUEPRINT_LIMITS.SHORT_MAX),
     hsCode: clampStr(p.hsCode, BLUEPRINT_LIMITS.SHORT_MAX),
     unit: clampNonEmptyStr(p.unit, BLUEPRINT_LIMITS.UNIT_MAX, 'PCS'),
     unitPrice: nonNegNum(p.unitPrice, 0),
@@ -198,6 +226,9 @@ export function sanitizeOrderItem(item: OrderItem, idx: number): OrderItem {
     productId: clampStr(item.productId, BLUEPRINT_LIMITS.ID_MAX),
     sku: clampStr(item.sku, BLUEPRINT_LIMITS.SHORT_MAX),
     description: clampStr(item.description, BLUEPRINT_LIMITS.LONG_MAX),
+    size: clampStr(item.size, BLUEPRINT_LIMITS.SHORT_MAX),
+    material: clampStr(item.material, BLUEPRINT_LIMITS.SHORT_MAX),
+    surfaceFinish: clampStr(item.surfaceFinish, BLUEPRINT_LIMITS.SHORT_MAX),
     hsCode: clampStr(item.hsCode, BLUEPRINT_LIMITS.SHORT_MAX),
     quantity: nonNegNum(item.quantity, 0),
     unit: clampNonEmptyStr(item.unit, BLUEPRINT_LIMITS.UNIT_MAX, 'PCS'),
@@ -209,12 +240,37 @@ export function sanitizeOrderItem(item: OrderItem, idx: number): OrderItem {
     cartonWidthCm: nonNegNum(item.cartonWidthCm, 0),
     cartonHeightCm: nonNegNum(item.cartonHeightCm, 0),
     originCountry: clampStr(item.originCountry, BLUEPRINT_LIMITS.ORIGIN_MAX),
+    palletNo: clampStr(item.palletNo, BLUEPRINT_LIMITS.SHORT_MAX),
+    cartonRange: clampStr(item.cartonRange, BLUEPRINT_LIMITS.SHORT_MAX),
+    setsPerCarton: nonNegNum(item.setsPerCarton, 0),
+  };
+}
+
+export function sanitizePackingRow(row: PackingListRow, idx: number): PackingListRow {
+  return {
+    id: sanitizeId(row.id, `pk-${idx}`),
+    palletNo: clampStr(row.palletNo, BLUEPRINT_LIMITS.SHORT_MAX),
+    ctnNo: clampStr(row.ctnNo, BLUEPRINT_LIMITS.SHORT_MAX),
+    itemNo: Math.max(1, nonNegNum(row.itemNo, 1)),
+    type: clampStr(row.type, BLUEPRINT_LIMITS.SHORT_MAX),
+    size: clampStr(row.size, BLUEPRINT_LIMITS.SHORT_MAX),
+    material: clampStr(row.material, BLUEPRINT_LIMITS.SHORT_MAX),
+    surfaceFinish: clampStr(row.surfaceFinish, BLUEPRINT_LIMITS.SHORT_MAX),
+    setsPerCarton: nonNegNum(row.setsPerCarton, 0),
+    cartonCount: nonNegNum(row.cartonCount, 0),
+    sharedCarton: Boolean(row.sharedCarton),
+    qty: nonNegNum(row.qty, 0),
+    unitWeightKg: nonNegNum(row.unitWeightKg, 0),
+    totalWeightKg: nonNegNum(row.totalWeightKg, 0),
   };
 }
 
 export function sanitizeOrderPayload(o: ExportOrder, ownerId: string) {
   const safeItems = Array.isArray(o.items)
     ? o.items.slice(0, BLUEPRINT_LIMITS.MAX_ORDER_ITEMS).map(sanitizeOrderItem)
+    : [];
+  const safePackingRows = Array.isArray(o.packingRows)
+    ? o.packingRows.slice(0, BLUEPRINT_LIMITS.MAX_PACKING_ROWS).map(sanitizePackingRow)
     : [];
 
   return {
@@ -227,7 +283,14 @@ export function sanitizeOrderPayload(o: ExportOrder, ownerId: string) {
     currency: clampCurrency(o.currency),
     supplierId: clampStr(o.supplierId, BLUEPRINT_LIMITS.ID_MAX),
     customerId: clampStr(o.customerId, BLUEPRINT_LIMITS.ID_MAX),
+    billToCustomerId: clampStr(o.billToCustomerId, BLUEPRINT_LIMITS.ID_MAX),
     bankAccountId: clampStr(o.bankAccountId, BLUEPRINT_LIMITS.ID_MAX),
+    itemHeader: clampStr(o.itemHeader, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    palletCount: nonNegNum(o.palletCount, 0),
+    emptyCartons: nonNegNum(o.emptyCartons, 0),
+    palletVolumeDetails: clampStr(o.palletVolumeDetails, BLUEPRINT_LIMITS.LONG_MAX),
+    surfaceFootnotes: clampStr(o.surfaceFootnotes, BLUEPRINT_LIMITS.LONG_MAX),
+    packingRows: safePackingRows,
     items: safeItems,
     shipping: {
       mode: clampTransportMode(o.shipping?.mode),

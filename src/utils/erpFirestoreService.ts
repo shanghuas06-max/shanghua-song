@@ -261,7 +261,13 @@ export function subscribeUserWorkspace(
     onSnapshot(
       userSubColQuery(uid, 'customers'),
       (snap) => {
-        state.customers = snap.docs.map((d) => d.data() as Customer);
+        state.customers = snap.docs.map((d) => {
+          const data = d.data() as Customer;
+          return {
+            ...data,
+            customPrices: Array.isArray(data.customPrices) ? data.customPrices : [],
+          };
+        });
         markReady('customers');
       },
       (err) => reportError(err, OperationType.LIST, `users/${uid}/customers`),
@@ -465,6 +471,37 @@ export const cloudErpOps = {
   saveProduct: (uid: string, p: Product, isExisting: boolean) => {
     const clean = sanitizeProductPayload(p, uid);
     return upsertSubDoc(uid, 'products', clean.id, clean, isExisting);
+  },
+  batchSaveProducts: async (
+    uid: string,
+    products: Product[],
+    existingIds: Set<string>,
+  ): Promise<void> => {
+    if (products.length === 0) return;
+    const path = `users/${uid}/products`;
+    try {
+      for (let i = 0; i < products.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = products.slice(i, i + 400);
+        for (const p of chunk) {
+          const clean = sanitizeProductPayload(p, uid);
+          const ref = userSubDocRef(uid, 'products', clean.id);
+          if (existingIds.has(clean.id)) {
+            const { id: _i, ownerId: _o, ...mutableFields } = clean;
+            batch.update(ref, { ...mutableFields, updatedAt: serverTimestamp() });
+          } else {
+            batch.set(ref, {
+              ...clean,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+        await batch.commit();
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
   },
   deleteProduct: (uid: string, id: string) => deleteSubDoc(uid, 'products', id),
 

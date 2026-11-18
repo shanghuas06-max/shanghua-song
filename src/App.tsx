@@ -34,6 +34,7 @@ import {
   formatMoney,
   resolveActiveOrder,
 } from './utils/exportCalculations';
+import { resolveCustomerProductPrice } from './utils/importExportUtils';
 import { AuthScreen } from './components/AuthScreen';
 import { SidebarNav } from './components/SidebarNav';
 import { TopHeader } from './components/TopHeader';
@@ -217,6 +218,13 @@ export default function App() {
     [state.customers, activeOrder],
   );
 
+  const billToCustomer = useMemo(
+    () =>
+      state.customers.find((c) => c.id === activeOrder?.billToCustomerId) ??
+      activeCustomer,
+    [state.customers, activeOrder?.billToCustomerId, activeCustomer],
+  );
+
   const activeSupplier = useMemo(
     () => state.suppliers.find((s) => s.id === activeOrder?.supplierId),
     [state.suppliers, activeOrder],
@@ -321,7 +329,14 @@ export default function App() {
       currency: cust?.defaultCurrency ?? 'USD',
       supplierId: sup?.id ?? '',
       customerId: cust?.id ?? '',
+      billToCustomerId: '',
       bankAccountId: bank?.id ?? '',
+      itemHeader: 'HARDLOCK NUT (HLN)',
+      palletCount: 1,
+      emptyCartons: 0,
+      palletVolumeDetails: '',
+      surfaceFootnotes: '',
+      packingRows: [],
       items: prod
         ? [
             {
@@ -329,10 +344,13 @@ export default function App() {
               productId: prod.id,
               sku: prod.sku,
               description: prod.nameEn,
+              size: prod.size ?? '',
+              material: prod.material ?? '',
+              surfaceFinish: prod.surfaceFinish ?? '',
               hsCode: prod.hsCode,
               quantity: prod.defaultUnitsPerCarton,
               unit: prod.unit,
-              unitPrice: prod.unitPrice,
+              unitPrice: resolveCustomerProductPrice(cust, prod).unitPrice,
               cartons: 1,
               unitNetWeightKg: prod.unitNetWeightKg,
               unitGrossWeightKg: prod.unitGrossWeightKg,
@@ -340,6 +358,9 @@ export default function App() {
               cartonWidthCm: prod.cartonWidthCm,
               cartonHeightCm: prod.cartonHeightCm,
               originCountry: prod.originCountry,
+              palletNo: '1',
+              cartonRange: '1',
+              setsPerCarton: prod.defaultUnitsPerCarton,
             },
           ]
         : [],
@@ -570,6 +591,31 @@ export default function App() {
       .catch(setFatalError);
   };
 
+  const handleBatchImportProducts = async (imported: Product[]) => {
+    if (!uid || imported.length === 0) return;
+    const existingIds = new Set(state.products.map((p) => p.id));
+    setState((prev) => {
+      let nextProducts = [...prev.products];
+      for (const item of imported) {
+        nextProducts = upsertById(nextProducts, item);
+      }
+      return {
+        ...prev,
+        products: nextProducts,
+      };
+    });
+    try {
+      await cloudErpOps.batchSaveProducts(uid, imported, existingIds);
+      await cloudErpOps.appendAuditLog(uid, {
+        action: 'MASTER_UPDATE',
+        targetLabel: 'BATCH_IMPORT_PRODUCTS',
+        summary: `Batch imported ${imported.length} products`,
+      });
+    } catch (err) {
+      setFatalError(err instanceof Error ? err : new Error(String(err)));
+    }
+  };
+
   const handleDeleteProduct = (id: string) => {
     if (!uid) return;
     setState((prev) => ({
@@ -783,9 +829,11 @@ export default function App() {
             <DocumentGenerator
               order={activeOrder}
               customer={activeCustomer}
+              billToCustomer={billToCustomer}
               supplier={activeSupplier}
               bank={activeBank}
               logistics={activeLogistics}
+              products={state.products}
               docLang={state.docLang}
               onChangeDocLang={handleChangeDocLang}
               onCreateNewOrder={handleCreateNewOrder}
@@ -809,6 +857,7 @@ export default function App() {
               onSaveBank={handleSaveBank}
               onDeleteBank={handleDeleteBank}
               onSaveProduct={handleSaveProduct}
+              onBatchImportProducts={handleBatchImportProducts}
               onDeleteProduct={handleDeleteProduct}
               t={t}
             />

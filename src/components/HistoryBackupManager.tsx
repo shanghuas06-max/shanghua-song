@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   Download,
+  FileSpreadsheet,
   Upload,
   RotateCcw,
   FolderOpen,
@@ -20,6 +21,7 @@ import {
   formatMoney,
   validateErpBackupPayload,
 } from '../utils/exportCalculations';
+import { exportOrdersToExcel } from '../utils/importExportUtils';
 
 interface HistoryBackupManagerProps {
   orders: ExportOrder[];
@@ -200,13 +202,26 @@ export const HistoryBackupManager: React.FC<HistoryBackupManagerProps> = ({
       {/* Saved Orders Table + Audit Log Split */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         <section className="xl:col-span-7 bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">
-              {t.historyOrdersTitle}
-            </h2>
-            <span className="text-xs font-mono-tabular text-slate-500">
-              {orders.length}
-            </span>
+          <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {t.historyOrdersTitle}
+              </h2>
+              <span className="text-xs font-mono-tabular text-slate-500">
+                {orders.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={orders.length === 0}
+              onClick={() =>
+                exportOrdersToExcel(orders, customers, 'hardlock-export-orders')
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 disabled:opacity-40 transition-colors whitespace-nowrap"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>{t.btnExportExcel}</span>
+            </button>
           </div>
 
           {orders.length === 0 ? (
@@ -258,6 +273,20 @@ export const HistoryBackupManager: React.FC<HistoryBackupManagerProps> = ({
                           {formatMoney(calc.incotermTotal, ord.currency)}
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              exportOrdersToExcel(
+                                [ord],
+                                customers,
+                                ord.invoiceNo || 'hardlock-order',
+                              )
+                            }
+                            aria-label={`${t.btnExportExcel} ${ord.invoiceNo}`}
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded mr-1"
+                          >
+                            <FileSpreadsheet className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => onLoadOrder(ord.id)}

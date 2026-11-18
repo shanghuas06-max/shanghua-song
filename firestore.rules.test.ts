@@ -43,12 +43,31 @@ test('Dirty Dozen #7 & #8: Volumetric sanitizers enforce blueprint string and ar
 test('Sanitizers clamp customer, product, and logistics payloads cleanly', () => {
   const seed = createInitialErpState();
   const customer = sanitizeCustomerPayload(
-    { ...seed.customers[0], address: 'A'.repeat(1500), notifyParty: undefined },
+    {
+      ...seed.customers[0],
+      address: 'A'.repeat(1500),
+      notifyParty: undefined,
+      customPrices: [
+        { productId: 'prod-1', unitPrice: 1.45 },
+        { productId: '../bad', unitPrice: 99 },
+        { productId: 'prod-2', unitPrice: -5 },
+      ],
+    },
     'uid-123',
   );
   assert.equal(customer.address.length, BLUEPRINT_LIMITS.LONG_MAX);
   assert.equal(customer.notifyParty, '');
   assert.equal(customer.ownerId, 'uid-123');
+  assert.deepEqual(customer.customPrices, [
+    { productId: 'prod-1', unitPrice: 1.45 },
+    { productId: 'prod-2', unitPrice: 0 },
+  ]);
+
+  const defaultCustomer = sanitizeCustomerPayload(
+    { ...seed.customers[0], customPrices: undefined },
+    'uid-123',
+  );
+  assert.deepEqual(defaultCustomer.customPrices, []);
 
   const logistics = sanitizeLogisticsPayload(
     { ...seed.logisticsProviders[0], supportedModes: [] },
@@ -132,7 +151,12 @@ test('Empty-master new order payload satisfies all firestore.rules order keys an
 
   assert.equal(isValidFirestoreId(newOrderPayload.id), true);
   assert.equal(isValidFirestoreId(newOrderPayload.ownerId), true);
-  assert.equal(Object.keys(newOrderPayload).length, 16); // + createdAt & updatedAt serverTimestamp = 18
+  assert.equal(Object.keys(newOrderPayload).length, 23); // + createdAt & updatedAt serverTimestamp = 25
   assert.equal(Object.keys(newOrderPayload.shipping).length, 12);
   assert.equal(Object.keys(newOrderPayload.costs).length, 8);
+  assert.equal(newOrderPayload.billToCustomerId, '');
+  assert.equal(newOrderPayload.itemHeader, '');
+  assert.equal(newOrderPayload.palletCount, 0);
+  assert.equal(newOrderPayload.emptyCartons, 0);
+  assert.deepEqual(newOrderPayload.packingRows, []);
 });

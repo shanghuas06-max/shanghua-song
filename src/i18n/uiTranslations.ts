@@ -195,6 +195,44 @@ export interface UiDictionary {
   emptyOrdersWorkspaceTitle: string;
   emptyOrdersWorkspaceDesc: string;
   emptyDocWorkspaceDesc: string;
+  lblFax: string;
+  lblSize: string;
+  lblMaterial: string;
+  lblSurfaceFinish: string;
+  selectBillTo: string;
+  billToSameAsCustomer: string;
+  docLayoutSectionTitle: string;
+  lblItemHeader: string;
+  lblPalletCount: string;
+  lblEmptyCartons: string;
+  lblPalletVolumeDetails: string;
+  lblSurfaceFootnotes: string;
+  lblPalletNo: string;
+  lblCtnNo: string;
+  lblSetsPerCtn: string;
+  packingRowsEditorTitle: string;
+  packingRowsHint: string;
+  btnAutoBuildPackingRows: string;
+  btnAddPackingRow: string;
+  btnClearPackingRows: string;
+  colSharedCtn: string;
+  btnImportProducts: string;
+  btnDownloadTemplate: string;
+  importPreviewTitle: string;
+  importPreviewSummary: string;
+  importConfirmBtn: string;
+  importSuccessToast: string;
+  importNoValidRows: string;
+  importSkippedErrors: string;
+  customPricingTitle: string;
+  customPricingHint: string;
+  customPricingAddBtn: string;
+  customPricingSelectProduct: string;
+  customPricingBaseLabel: string;
+  customPricingPriceLabel: string;
+  customPricingBadge: string;
+  customPricingEmpty: string;
+  btnExportExcel: string;
 }
 
 export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
@@ -398,6 +436,44 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     emptyOrdersWorkspaceTitle: '暂无出口订单',
     emptyOrdersWorkspaceDesc: '暂无订单，请点击右上角「新建订单」按钮创建第一笔出口订单，或前往「历史记录与备份」恢复已有数据。',
     emptyDocWorkspaceDesc: '暂无订单，请先点击右上角「新建订单」创建订单后再生成商业发票、装箱单与箱唛。',
+    lblFax: '传真 (Fax)',
+    lblSize: '规格尺寸 (Size)',
+    lblMaterial: '材质 (Material)',
+    lblSurfaceFinish: '表面处理 (Finish)',
+    selectBillTo: '账单抬头 / 买方 (BILL TO)',
+    billToSameAsCustomer: '同收货人 (Same as Ship To)',
+    docLayoutSectionTitle: '单据扩展字段与托盘装箱编排 (发票 / 装箱单)',
+    lblItemHeader: '货物品类总标题 (ITEM Header)',
+    lblPalletCount: '托盘总数量 (Pallets)',
+    lblEmptyCartons: '空箱补齐数量 (Empty Cartons)',
+    lblPalletVolumeDetails: '分托盘体积尺寸明细 (每行一条)',
+    lblSurfaceFootnotes: '表面处理说明脚注 (如 *CR3:...)',
+    lblPalletNo: '托盘号 (Pallet)',
+    lblCtnNo: '箱号段 (Ctn. No.)',
+    lblSetsPerCtn: '每箱套数',
+    packingRowsEditorTitle: '装箱单托盘/混装行明细 (Packing List Rows)',
+    packingRowsHint: '留空时自动按商品明细生成；若需体现「同托盘多规格」或「同一箱内混装(虚线分隔)」，点击自动生成后调整 Pallet No. 与 Ctn. No. 即可。',
+    btnAutoBuildPackingRows: '从订单明细生成托盘行',
+    btnAddPackingRow: '新增混装行',
+    btnClearPackingRows: '恢复自动生成',
+    colSharedCtn: '混装',
+    btnImportProducts: '导入数据',
+    btnDownloadTemplate: '下载导入模板',
+    importPreviewTitle: '批量导入产品预览确认',
+    importPreviewSummary: '已解析有效产品：{total} 条（新增 {created} 条，更新现有 SKU {updated} 条）',
+    importConfirmBtn: '确认批量写入云端',
+    importSuccessToast: '已成功批量导入 {count} 条产品资料！',
+    importNoValidRows: '未能解析到有效的产品数据，请检查表头及必填字段（产品编号、品名）。',
+    importSkippedErrors: '以下行因格式或字段缺失被跳过：',
+    customPricingTitle: '专属报价（一客一价）',
+    customPricingHint: '为该客户绑定特定产品专属单价。新建订单或选择该客户时，系统将优先自动带出专属价；未绑定产品自动使用产品库基础单价。',
+    customPricingAddBtn: '绑定/更新专属价',
+    customPricingSelectProduct: '选择产品',
+    customPricingBaseLabel: '基础价',
+    customPricingPriceLabel: '客户专属单价',
+    customPricingBadge: '专属价',
+    customPricingEmpty: '暂未绑定专属报价，订单将默认采用产品库基础单价。',
+    btnExportExcel: '导出为 Excel',
   },
   ja: {
     brandTitle: 'HARDLOCK ERP',
@@ -599,6 +675,44 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     emptyOrdersWorkspaceTitle: '受注データがありません',
     emptyOrdersWorkspaceDesc: '受注データがありません。右上の「新規受注作成」ボタンから最初の輸出受注を作成するか、「履歴・バックアップ復元」からデータを復元してください。',
     emptyDocWorkspaceDesc: '輸出書類を作成できる受注データがありません。右上の「新規受注作成」から受注を作成してください。',
+    lblFax: 'FAX番号',
+    lblSize: 'サイズ (Size)',
+    lblMaterial: '材質 (Material)',
+    lblSurfaceFinish: '表面処理 (Finish)',
+    selectBillTo: '請求先 / 買主 (BILL TO)',
+    billToSameAsCustomer: '荷受人と同じ (Same as Ship To)',
+    docLayoutSectionTitle: '書類拡張情報・パレット梱包設定 (Invoice / P/L)',
+    lblItemHeader: '品目総見出し (ITEM Header)',
+    lblPalletCount: 'パレット総数 (Pallets)',
+    lblEmptyCartons: '空箱数 (Empty Cartons)',
+    lblPalletVolumeDetails: 'パレット別容積・寸法明細 (1行1件)',
+    lblSurfaceFootnotes: '表面処理注記 (*CR3:... 等)',
+    lblPalletNo: 'パレット番号',
+    lblCtnNo: 'カートン番号',
+    lblSetsPerCtn: '入数/箱',
+    packingRowsEditorTitle: 'パッキングリスト・混載行編集 (Packing List Rows)',
+    packingRowsHint: '未設定時は受注明細から自動生成します。混載カートン（点線区切り）やパレット結合を使う場合は自動生成後に番号を調整してください。',
+    btnAutoBuildPackingRows: '明細からパレット行を生成',
+    btnAddPackingRow: '混載行を追加',
+    btnClearPackingRows: '自動生成に戻す',
+    colSharedCtn: '混載',
+    btnImportProducts: 'データ取込',
+    btnDownloadTemplate: '取込テンプレート',
+    importPreviewTitle: '製品一括インポート確認',
+    importPreviewSummary: '有効データ：{total} 件（新規 {created} 件、既存SKU更新 {updated} 件）',
+    importConfirmBtn: 'クラウドへ一括保存',
+    importSuccessToast: '{count} 件の製品を一括インポートしました！',
+    importNoValidRows: '有効な製品データが見つかりませんでした。列名（SKU・品名）を確認してください。',
+    importSkippedErrors: '以下の行はエラーのためスキップされました：',
+    customPricingTitle: '顧客別専用単価（一客一価）',
+    customPricingHint: 'この顧客向けの特定製品単価を設定します。新規受注または顧客選択時に専用単価を優先適用し、未設定品は製品マスタの標準単価を使用します。',
+    customPricingAddBtn: '専用単価を追加/更新',
+    customPricingSelectProduct: '製品を選択',
+    customPricingBaseLabel: '標準単価',
+    customPricingPriceLabel: '顧客専用単価',
+    customPricingBadge: '専用単価',
+    customPricingEmpty: '専用単価は未設定です（製品マスタの標準単価が適用されます）。',
+    btnExportExcel: 'Excel 出力',
   },
   en: {
     brandTitle: 'HARDLOCK ERP',
@@ -800,5 +914,43 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     emptyOrdersWorkspaceTitle: 'No Export Orders Yet',
     emptyOrdersWorkspaceDesc: 'No orders found. Click "New Order" in the top-right bar to create your first export order, or restore a backup from History & Backup.',
     emptyDocWorkspaceDesc: 'No active order available. Click "New Order" in the top-right bar before generating commercial invoices, packing lists, or case marks.',
+    lblFax: 'Fax',
+    lblSize: 'Size',
+    lblMaterial: 'Material',
+    lblSurfaceFinish: 'Surface Finish',
+    selectBillTo: 'BILL TO (Buyer / Payer)',
+    billToSameAsCustomer: 'Same as Ship-To Customer',
+    docLayoutSectionTitle: 'Document Header & Pallet Packing Layout',
+    lblItemHeader: 'ITEM Category Header',
+    lblPalletCount: 'Total Pallets',
+    lblEmptyCartons: 'Empty Cartons',
+    lblPalletVolumeDetails: 'Pallet Volume & Dimensions (one per line)',
+    lblSurfaceFootnotes: 'Surface Finish Footnotes (*CR3:...)',
+    lblPalletNo: 'Pallet No.',
+    lblCtnNo: 'Ctn. No.',
+    lblSetsPerCtn: 'Sets / Ctn',
+    packingRowsEditorTitle: 'Packing List Pallet & Mixed-Carton Rows',
+    packingRowsHint: 'Auto-generated from line items when empty. Click auto-build to customize pallet merges or shared mixed-carton rows.',
+    btnAutoBuildPackingRows: 'Build from Line Items',
+    btnAddPackingRow: 'Add Packing Row',
+    btnClearPackingRows: 'Use Auto Rows',
+    colSharedCtn: 'Mixed',
+    btnImportProducts: 'Import Data',
+    btnDownloadTemplate: 'Download Template',
+    importPreviewTitle: 'Confirm Bulk Product Import',
+    importPreviewSummary: 'Parsed {total} valid products ({created} new, {updated} updating existing SKUs)',
+    importConfirmBtn: 'Import to Cloud Catalog',
+    importSuccessToast: 'Imported {count} products to catalog!',
+    importNoValidRows: 'No valid product rows found. Please check required SKU and Name columns.',
+    importSkippedErrors: 'Skipped rows due to missing/invalid fields:',
+    customPricingTitle: 'Customer-Specific Pricing',
+    customPricingHint: 'Bind custom unit prices per product for this customer. New orders and customer switches prioritize these prices over base catalog pricing.',
+    customPricingAddBtn: 'Add / Update Price',
+    customPricingSelectProduct: 'Select Product',
+    customPricingBaseLabel: 'Base',
+    customPricingPriceLabel: 'Customer Unit Price',
+    customPricingBadge: 'Custom Price',
+    customPricingEmpty: 'No custom prices configured. Base catalog unit prices apply by default.',
+    btnExportExcel: 'Export to Excel',
   },
 };
