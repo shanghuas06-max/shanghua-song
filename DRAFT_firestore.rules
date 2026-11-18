@@ -1,0 +1,562 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1 / Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Reusable Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.uid == userId;
+    }
+
+    function hasParentUser(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function isNonNegNum(val) {
+      return (val is int || val is float) && val >= 0;
+    }
+
+    function isStrLen(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidCurrency(val) {
+      return val is string && val in ['USD', 'JPY', 'EUR', 'CNY'];
+    }
+
+    function isValidIncoterm(val) {
+      return val is string && val in ['EXW', 'FCA', 'FOB', 'CFR', 'CIF', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP'];
+    }
+
+    function isValidTransportMode(val) {
+      return val is string && val in ['SEA', 'AIR', 'EXPRESS', 'LAND'];
+    }
+
+    // Pillar 2: Validation Blueprints (Anti-Update-Gap)
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'email', 'displayName', 'companyName',
+          'uiLang', 'docLang', 'activeOrderId', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'companyName',
+          'uiLang', 'docLang', 'activeOrderId', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && isStrLen(data.email, 3, 240)
+        && isStrLen(data.displayName, 0, 240)
+        && isStrLen(data.companyName, 0, 240)
+        && data.uiLang in ['zh', 'ja', 'en']
+        && data.docLang in ['en', 'ja', 'zh']
+        && isStrLen(data.activeOrderId, 0, 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCustomer(data, userId, docId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'code', 'name', 'country', 'address',
+          'contactName', 'email', 'phone', 'defaultCurrency',
+          'defaultIncoterm', 'notifyParty', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'code', 'name', 'country', 'address',
+          'contactName', 'email', 'phone', 'defaultCurrency',
+          'defaultIncoterm', 'notifyParty', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.id == docId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isStrLen(data.code, 1, 80)
+        && isStrLen(data.name, 1, 240)
+        && isStrLen(data.country, 0, 240)
+        && isStrLen(data.address, 0, 1000)
+        && isStrLen(data.contactName, 0, 240)
+        && isStrLen(data.email, 0, 240)
+        && isStrLen(data.phone, 0, 240)
+        && isValidCurrency(data.defaultCurrency)
+        && isValidIncoterm(data.defaultIncoterm)
+        && isStrLen(data.notifyParty, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSupplier(data, userId, docId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'code', 'name', 'country', 'address',
+          'contactName', 'email', 'phone', 'taxOrExporterId',
+          'signatoryName', 'signatoryTitle', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'code', 'name', 'country', 'address',
+          'contactName', 'email', 'phone', 'taxOrExporterId',
+          'signatoryName', 'signatoryTitle', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.id == docId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isStrLen(data.code, 1, 80)
+        && isStrLen(data.name, 1, 240)
+        && isStrLen(data.country, 0, 240)
+        && isStrLen(data.address, 0, 1000)
+        && isStrLen(data.contactName, 0, 240)
+        && isStrLen(data.email, 0, 240)
+        && isStrLen(data.phone, 0, 240)
+        && isStrLen(data.taxOrExporterId, 0, 100)
+        && isStrLen(data.signatoryName, 0, 240)
+        && isStrLen(data.signatoryTitle, 0, 240)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLogistics(data, userId, docId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'code', 'name', 'supportedModes',
+          'contactName', 'phone', 'email', 'accountNo',
+          'defaultPortOrHub', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'code', 'name', 'supportedModes',
+          'contactName', 'phone', 'email', 'accountNo',
+          'defaultPortOrHub', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.id == docId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isStrLen(data.code, 1, 80)
+        && isStrLen(data.name, 1, 240)
+        && data.supportedModes is list
+        && data.supportedModes.size() >= 1
+        && data.supportedModes.size() <= 4
+        && data.supportedModes.hasOnly(['SEA', 'AIR', 'EXPRESS', 'LAND'])
+        && isStrLen(data.contactName, 0, 240)
+        && isStrLen(data.phone, 0, 240)
+        && isStrLen(data.email, 0, 240)
+        && isStrLen(data.accountNo, 0, 240)
+        && isStrLen(data.defaultPortOrHub, 0, 240)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBankAccount(data, userId, docId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'label', 'bankName', 'branchName',
+          'swiftCode', 'accountName', 'accountNumber', 'currency',
+          'bankAddress', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'label', 'bankName', 'branchName',
+          'swiftCode', 'accountName', 'accountNumber', 'currency',
+          'bankAddress', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.id == docId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isStrLen(data.label, 1, 240)
+        && isStrLen(data.bankName, 1, 240)
+        && isStrLen(data.branchName, 0, 240)
+        && isStrLen(data.swiftCode, 0, 80)
+        && isStrLen(data.accountName, 0, 240)
+        && isStrLen(data.accountNumber, 0, 240)
+        && isValidCurrency(data.currency)
+        && isStrLen(data.bankAddress, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidProduct(data, userId, docId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'sku', 'nameEn', 'nameLocal', 'hsCode',
+          'unit', 'unitPrice', 'currency', 'unitNetWeightKg',
+          'unitGrossWeightKg', 'defaultUnitsPerCarton', 'cartonLengthCm',
+          'cartonWidthCm', 'cartonHeightCm', 'originCountry',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'sku', 'nameEn', 'nameLocal', 'hsCode',
+          'unit', 'unitPrice', 'currency', 'unitNetWeightKg',
+          'unitGrossWeightKg', 'defaultUnitsPerCarton', 'cartonLengthCm',
+          'cartonWidthCm', 'cartonHeightCm', 'originCountry',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.id == docId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isStrLen(data.sku, 1, 80)
+        && isStrLen(data.nameEn, 1, 1000)
+        && isStrLen(data.nameLocal, 0, 1000)
+        && isStrLen(data.hsCode, 0, 80)
+        && isStrLen(data.unit, 1, 40)
+        && isNonNegNum(data.unitPrice)
+        && isValidCurrency(data.currency)
+        && isNonNegNum(data.unitNetWeightKg)
+        && isNonNegNum(data.unitGrossWeightKg)
+        && isNonNegNum(data.defaultUnitsPerCarton)
+        && isNonNegNum(data.cartonLengthCm)
+        && isNonNegNum(data.cartonWidthCm)
+        && isNonNegNum(data.cartonHeightCm)
+        && isStrLen(data.originCountry, 0, 120)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidOrderShipping(s) {
+      return s is map
+        && s.keys().hasAll([
+          'mode', 'logisticsProviderId', 'incoterm', 'incotermPlace',
+          'portOfLoading', 'portOfDischarge', 'vesselOrFlightOrCourier',
+          'trackingOrBlNo', 'etd', 'eta', 'shippingMarksMain', 'caseNumberPrefix'
+        ])
+        && s.keys().hasOnly([
+          'mode', 'logisticsProviderId', 'incoterm', 'incotermPlace',
+          'portOfLoading', 'portOfDischarge', 'vesselOrFlightOrCourier',
+          'trackingOrBlNo', 'etd', 'eta', 'shippingMarksMain', 'caseNumberPrefix'
+        ])
+        && isValidTransportMode(s.mode)
+        && isStrLen(s.logisticsProviderId, 0, 128)
+        && isValidIncoterm(s.incoterm)
+        && isStrLen(s.incotermPlace, 0, 240)
+        && isStrLen(s.portOfLoading, 0, 240)
+        && isStrLen(s.portOfDischarge, 0, 240)
+        && isStrLen(s.vesselOrFlightOrCourier, 0, 240)
+        && isStrLen(s.trackingOrBlNo, 0, 240)
+        && isStrLen(s.etd, 0, 40)
+        && isStrLen(s.eta, 0, 40)
+        && isStrLen(s.shippingMarksMain, 0, 240)
+        && isStrLen(s.caseNumberPrefix, 0, 80);
+    }
+
+    function isValidOrderCosts(c) {
+      return c is map
+        && c.keys().hasAll([
+          'packingHandlingCost', 'inlandFreightCost', 'mainFreightCost',
+          'insuranceMode', 'insuranceManualCost', 'insuranceRatePercent',
+          'destinationHandlingCost', 'importDutyTaxCost'
+        ])
+        && c.keys().hasOnly([
+          'packingHandlingCost', 'inlandFreightCost', 'mainFreightCost',
+          'insuranceMode', 'insuranceManualCost', 'insuranceRatePercent',
+          'destinationHandlingCost', 'importDutyTaxCost'
+        ])
+        && isNonNegNum(c.packingHandlingCost)
+        && isNonNegNum(c.inlandFreightCost)
+        && isNonNegNum(c.mainFreightCost)
+        && c.insuranceMode in ['MANUAL', 'AUTO_PERCENT']
+        && isNonNegNum(c.insuranceManualCost)
+        && isNonNegNum(c.insuranceRatePercent)
+        && isNonNegNum(c.destinationHandlingCost)
+        && isNonNegNum(c.importDutyTaxCost);
+    }
+
+    function isValidOrder(data, userId, docId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'invoiceNo', 'poNo', 'orderDate', 'paymentTerms',
+          'currency', 'supplierId', 'customerId', 'bankAccountId',
+          'items', 'shipping', 'costs', 'remarks',
+          'orderCreatedAt', 'orderUpdatedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'invoiceNo', 'poNo', 'orderDate', 'paymentTerms',
+          'currency', 'supplierId', 'customerId', 'bankAccountId',
+          'items', 'shipping', 'costs', 'remarks',
+          'orderCreatedAt', 'orderUpdatedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.id == docId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isStrLen(data.invoiceNo, 1, 100)
+        && isStrLen(data.poNo, 0, 100)
+        && isStrLen(data.orderDate, 0, 40)
+        && isStrLen(data.paymentTerms, 0, 240)
+        && isValidCurrency(data.currency)
+        && isStrLen(data.supplierId, 0, 128)
+        && isStrLen(data.customerId, 0, 128)
+        && isStrLen(data.bankAccountId, 0, 128)
+        && data.items is list
+        && data.items.size() <= 50
+        && (
+          data.items.size() == 0 || (
+            data.items[0] is map
+            && isStrLen(data.items[0].sku, 0, 80)
+            && isStrLen(data.items[0].description, 0, 1000)
+            && isNonNegNum(data.items[0].quantity)
+            && isNonNegNum(data.items[0].unitPrice)
+          )
+        )
+        && isValidOrderShipping(data.shipping)
+        && isValidOrderCosts(data.costs)
+        && isStrLen(data.remarks, 0, 1000)
+        && isStrLen(data.orderCreatedAt, 0, 64)
+        && isStrLen(data.orderUpdatedAt, 0, 64)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data, userId, docId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'timestamp', 'action', 'targetLabel',
+          'summary', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'timestamp', 'action', 'targetLabel',
+          'summary', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.id == docId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isStrLen(data.timestamp, 1, 64)
+        && data.action in [
+          'CREATE_ORDER', 'UPDATE_ORDER', 'DELETE_ORDER',
+          'DUPLICATE_ORDER', 'MASTER_UPDATE', 'RESTORE_BACKUP'
+        ]
+        && isStrLen(data.targetLabel, 0, 240)
+        && isStrLen(data.summary, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // User Workspace Root Document (PII strictly private to owner)
+    match /users/{userId} {
+      allow get: if isVerifiedOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isVerifiedOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update workspace preferences
+          incoming().diff(existing()).affectedKeys().hasOnly(['uiLang', 'docLang', 'activeOrderId', 'updatedAt']) ||
+          // Action: Update operator profile details
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'companyName', 'updatedAt'])
+        );
+      allow delete: if false;
+
+      // Subcollection: Customers
+      match /customers/{customerId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId) && hasParentUser(userId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(customerId)
+          && hasParentUser(userId)
+          && isValidCustomer(incoming(), userId, customerId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(customerId)
+          && hasParentUser(userId)
+          && isValidCustomer(incoming(), userId, customerId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'code', 'name', 'country', 'address', 'contactName',
+            'email', 'phone', 'defaultCurrency', 'defaultIncoterm',
+            'notifyParty', 'updatedAt'
+          ]);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId) && hasParentUser(userId);
+      }
+
+      // Subcollection: Suppliers
+      match /suppliers/{supplierId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId) && hasParentUser(userId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(supplierId)
+          && hasParentUser(userId)
+          && isValidSupplier(incoming(), userId, supplierId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(supplierId)
+          && hasParentUser(userId)
+          && isValidSupplier(incoming(), userId, supplierId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'code', 'name', 'country', 'address', 'contactName',
+            'email', 'phone', 'taxOrExporterId', 'signatoryName',
+            'signatoryTitle', 'updatedAt'
+          ]);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId) && hasParentUser(userId);
+      }
+
+      // Subcollection: Logistics Providers
+      match /logisticsProviders/{providerId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId) && hasParentUser(userId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(providerId)
+          && hasParentUser(userId)
+          && isValidLogistics(incoming(), userId, providerId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(providerId)
+          && hasParentUser(userId)
+          && isValidLogistics(incoming(), userId, providerId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'code', 'name', 'supportedModes', 'contactName',
+            'phone', 'email', 'accountNo', 'defaultPortOrHub', 'updatedAt'
+          ]);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId) && hasParentUser(userId);
+      }
+
+      // Subcollection: Bank Accounts
+      match /bankAccounts/{bankId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId) && hasParentUser(userId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(bankId)
+          && hasParentUser(userId)
+          && isValidBankAccount(incoming(), userId, bankId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(bankId)
+          && hasParentUser(userId)
+          && isValidBankAccount(incoming(), userId, bankId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'label', 'bankName', 'branchName', 'swiftCode',
+            'accountName', 'accountNumber', 'currency', 'bankAddress', 'updatedAt'
+          ]);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId) && hasParentUser(userId);
+      }
+
+      // Subcollection: Products
+      match /products/{productId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId) && hasParentUser(userId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(productId)
+          && hasParentUser(userId)
+          && isValidProduct(incoming(), userId, productId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(productId)
+          && hasParentUser(userId)
+          && isValidProduct(incoming(), userId, productId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'sku', 'nameEn', 'nameLocal', 'hsCode', 'unit', 'unitPrice',
+            'currency', 'unitNetWeightKg', 'unitGrossWeightKg',
+            'defaultUnitsPerCarton', 'cartonLengthCm', 'cartonWidthCm',
+            'cartonHeightCm', 'originCountry', 'updatedAt'
+          ]);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId) && hasParentUser(userId);
+      }
+
+      // Subcollection: Export Orders
+      match /orders/{orderId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId) && hasParentUser(userId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(orderId)
+          && hasParentUser(userId)
+          && isValidOrder(incoming(), userId, orderId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(orderId)
+          && hasParentUser(userId)
+          && isValidOrder(incoming(), userId, orderId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'invoiceNo', 'poNo', 'orderDate', 'paymentTerms', 'currency',
+            'supplierId', 'customerId', 'bankAccountId', 'items',
+            'shipping', 'costs', 'remarks', 'orderCreatedAt', 'orderUpdatedAt', 'updatedAt'
+          ]);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId) && hasParentUser(userId);
+      }
+
+      // Subcollection: Audit Logs (Immutable once created)
+      match /auditLogs/{logId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId) && hasParentUser(userId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(logId)
+          && hasParentUser(userId)
+          && isValidAuditLog(incoming(), userId, logId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if false;
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId) && hasParentUser(userId);
+      }
+    }
+  }
+}

@@ -1,0 +1,289 @@
+import type {
+  AuditLogEntry,
+  BankAccount,
+  CurrencyCode,
+  Customer,
+  DocLanguage,
+  ExportOrder,
+  IncotermCode,
+  LogisticsProvider,
+  OrderItem,
+  Product,
+  Supplier,
+  TransportMode,
+  UiLanguage,
+} from '../types/erp';
+
+export const BLUEPRINT_LIMITS = {
+  ID_MAX: 128,
+  ID_PATTERN: /^[a-zA-Z0-9_\-]+$/,
+  SHORT_MAX: 80,
+  MEDIUM_MAX: 240,
+  LONG_MAX: 1000,
+  INVOICE_MAX: 100,
+  DATE_MAX: 40,
+  TIMESTAMP_STR_MAX: 64,
+  UNIT_MAX: 40,
+  ORIGIN_MAX: 120,
+  MAX_ORDER_ITEMS: 50,
+  MAX_MODES: 4,
+} as const;
+
+const VALID_CURRENCIES: CurrencyCode[] = ['USD', 'JPY', 'EUR', 'CNY'];
+const VALID_INCOTERMS: IncotermCode[] = [
+  'EXW',
+  'FCA',
+  'FOB',
+  'CFR',
+  'CIF',
+  'CPT',
+  'CIP',
+  'DAP',
+  'DPU',
+  'DDP',
+];
+const VALID_MODES: TransportMode[] = ['SEA', 'AIR', 'EXPRESS', 'LAND'];
+const VALID_UI_LANGS: UiLanguage[] = ['zh', 'ja', 'en'];
+const VALID_DOC_LANGS: DocLanguage[] = ['en', 'ja', 'zh'];
+
+export function isValidFirestoreId(id: unknown): id is string {
+  return (
+    typeof id === 'string' &&
+    id.length >= 1 &&
+    id.length <= BLUEPRINT_LIMITS.ID_MAX &&
+    BLUEPRINT_LIMITS.ID_PATTERN.test(id)
+  );
+}
+
+export function sanitizeId(raw: string, prefix: string): string {
+  const cleaned = String(raw ?? '')
+    .replace(/[^a-zA-Z0-9_\-]/g, '-')
+    .slice(0, BLUEPRINT_LIMITS.ID_MAX);
+  if (cleaned.length >= 1 && BLUEPRINT_LIMITS.ID_PATTERN.test(cleaned)) {
+    return cleaned;
+  }
+  return `${prefix}-${Date.now()}`;
+}
+
+export function clampStr(val: unknown, maxLen: number, fallback = ''): string {
+  const str = typeof val === 'string' ? val : val == null ? fallback : String(val);
+  return str.slice(0, maxLen);
+}
+
+export function clampNonEmptyStr(val: unknown, maxLen: number, fallback: string): string {
+  const str = clampStr(val, maxLen).trim();
+  return str.length > 0 ? str : fallback.slice(0, maxLen);
+}
+
+export function nonNegNum(val: unknown, fallback = 0): number {
+  const num = typeof val === 'number' ? val : Number(val);
+  if (!Number.isFinite(num) || num < 0) return fallback;
+  return num;
+}
+
+export function clampCurrency(val: unknown, fallback: CurrencyCode = 'USD'): CurrencyCode {
+  return VALID_CURRENCIES.includes(val as CurrencyCode) ? (val as CurrencyCode) : fallback;
+}
+
+export function clampIncoterm(val: unknown, fallback: IncotermCode = 'FOB'): IncotermCode {
+  return VALID_INCOTERMS.includes(val as IncotermCode) ? (val as IncotermCode) : fallback;
+}
+
+export function clampTransportMode(val: unknown, fallback: TransportMode = 'SEA'): TransportMode {
+  return VALID_MODES.includes(val as TransportMode) ? (val as TransportMode) : fallback;
+}
+
+export function clampUiLang(val: unknown, fallback: UiLanguage = 'zh'): UiLanguage {
+  return VALID_UI_LANGS.includes(val as UiLanguage) ? (val as UiLanguage) : fallback;
+}
+
+export function clampDocLang(val: unknown, fallback: DocLanguage = 'en'): DocLanguage {
+  return VALID_DOC_LANGS.includes(val as DocLanguage) ? (val as DocLanguage) : fallback;
+}
+
+export function sanitizeCustomerPayload(c: Customer, ownerId: string) {
+  return {
+    id: sanitizeId(c.id, 'cust'),
+    ownerId,
+    code: clampNonEmptyStr(c.code, BLUEPRINT_LIMITS.SHORT_MAX, 'CUST'),
+    name: clampNonEmptyStr(c.name, BLUEPRINT_LIMITS.MEDIUM_MAX, 'Customer'),
+    country: clampStr(c.country, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    address: clampStr(c.address, BLUEPRINT_LIMITS.LONG_MAX),
+    contactName: clampStr(c.contactName, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    email: clampStr(c.email, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    phone: clampStr(c.phone, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    defaultCurrency: clampCurrency(c.defaultCurrency),
+    defaultIncoterm: clampIncoterm(c.defaultIncoterm),
+    notifyParty: clampStr(c.notifyParty, BLUEPRINT_LIMITS.LONG_MAX),
+  };
+}
+
+export function sanitizeSupplierPayload(s: Supplier, ownerId: string) {
+  return {
+    id: sanitizeId(s.id, 'sup'),
+    ownerId,
+    code: clampNonEmptyStr(s.code, BLUEPRINT_LIMITS.SHORT_MAX, 'SUP'),
+    name: clampNonEmptyStr(s.name, BLUEPRINT_LIMITS.MEDIUM_MAX, 'Supplier'),
+    country: clampStr(s.country, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    address: clampStr(s.address, BLUEPRINT_LIMITS.LONG_MAX),
+    contactName: clampStr(s.contactName, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    email: clampStr(s.email, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    phone: clampStr(s.phone, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    taxOrExporterId: clampStr(s.taxOrExporterId, 100),
+    signatoryName: clampStr(s.signatoryName, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    signatoryTitle: clampStr(s.signatoryTitle, BLUEPRINT_LIMITS.MEDIUM_MAX),
+  };
+}
+
+export function sanitizeLogisticsPayload(l: LogisticsProvider, ownerId: string) {
+  const modes = Array.isArray(l.supportedModes)
+    ? Array.from(new Set(l.supportedModes.filter((m) => VALID_MODES.includes(m)))).slice(
+        0,
+        BLUEPRINT_LIMITS.MAX_MODES,
+      )
+    : [];
+  return {
+    id: sanitizeId(l.id, 'log'),
+    ownerId,
+    code: clampNonEmptyStr(l.code, BLUEPRINT_LIMITS.SHORT_MAX, 'LOG'),
+    name: clampNonEmptyStr(l.name, BLUEPRINT_LIMITS.MEDIUM_MAX, 'Logistics Provider'),
+    supportedModes: modes.length > 0 ? modes : (['SEA'] as TransportMode[]),
+    contactName: clampStr(l.contactName, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    phone: clampStr(l.phone, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    email: clampStr(l.email, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    accountNo: clampStr(l.accountNo, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    defaultPortOrHub: clampStr(l.defaultPortOrHub, BLUEPRINT_LIMITS.MEDIUM_MAX),
+  };
+}
+
+export function sanitizeBankPayload(b: BankAccount, ownerId: string) {
+  return {
+    id: sanitizeId(b.id, 'bank'),
+    ownerId,
+    label: clampNonEmptyStr(b.label, BLUEPRINT_LIMITS.MEDIUM_MAX, 'Bank Account'),
+    bankName: clampNonEmptyStr(b.bankName, BLUEPRINT_LIMITS.MEDIUM_MAX, 'Bank'),
+    branchName: clampStr(b.branchName, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    swiftCode: clampStr(b.swiftCode, BLUEPRINT_LIMITS.SHORT_MAX),
+    accountName: clampStr(b.accountName, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    accountNumber: clampStr(b.accountNumber, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    currency: clampCurrency(b.currency),
+    bankAddress: clampStr(b.bankAddress, BLUEPRINT_LIMITS.LONG_MAX),
+  };
+}
+
+export function sanitizeProductPayload(p: Product, ownerId: string) {
+  return {
+    id: sanitizeId(p.id, 'prod'),
+    ownerId,
+    sku: clampNonEmptyStr(p.sku, BLUEPRINT_LIMITS.SHORT_MAX, 'SKU'),
+    nameEn: clampNonEmptyStr(p.nameEn, BLUEPRINT_LIMITS.LONG_MAX, 'Product'),
+    nameLocal: clampStr(p.nameLocal, BLUEPRINT_LIMITS.LONG_MAX),
+    hsCode: clampStr(p.hsCode, BLUEPRINT_LIMITS.SHORT_MAX),
+    unit: clampNonEmptyStr(p.unit, BLUEPRINT_LIMITS.UNIT_MAX, 'PCS'),
+    unitPrice: nonNegNum(p.unitPrice, 0),
+    currency: clampCurrency(p.currency),
+    unitNetWeightKg: nonNegNum(p.unitNetWeightKg, 0),
+    unitGrossWeightKg: nonNegNum(p.unitGrossWeightKg, 0),
+    defaultUnitsPerCarton: Math.max(1, nonNegNum(p.defaultUnitsPerCarton, 1)),
+    cartonLengthCm: nonNegNum(p.cartonLengthCm, 0),
+    cartonWidthCm: nonNegNum(p.cartonWidthCm, 0),
+    cartonHeightCm: nonNegNum(p.cartonHeightCm, 0),
+    originCountry: clampStr(p.originCountry, BLUEPRINT_LIMITS.ORIGIN_MAX),
+  };
+}
+
+export function sanitizeOrderItem(item: OrderItem, idx: number): OrderItem {
+  return {
+    id: sanitizeId(item.id, `oi-${idx}`),
+    productId: clampStr(item.productId, BLUEPRINT_LIMITS.ID_MAX),
+    sku: clampStr(item.sku, BLUEPRINT_LIMITS.SHORT_MAX),
+    description: clampStr(item.description, BLUEPRINT_LIMITS.LONG_MAX),
+    hsCode: clampStr(item.hsCode, BLUEPRINT_LIMITS.SHORT_MAX),
+    quantity: nonNegNum(item.quantity, 0),
+    unit: clampNonEmptyStr(item.unit, BLUEPRINT_LIMITS.UNIT_MAX, 'PCS'),
+    unitPrice: nonNegNum(item.unitPrice, 0),
+    cartons: nonNegNum(item.cartons, 0),
+    unitNetWeightKg: nonNegNum(item.unitNetWeightKg, 0),
+    unitGrossWeightKg: nonNegNum(item.unitGrossWeightKg, 0),
+    cartonLengthCm: nonNegNum(item.cartonLengthCm, 0),
+    cartonWidthCm: nonNegNum(item.cartonWidthCm, 0),
+    cartonHeightCm: nonNegNum(item.cartonHeightCm, 0),
+    originCountry: clampStr(item.originCountry, BLUEPRINT_LIMITS.ORIGIN_MAX),
+  };
+}
+
+export function sanitizeOrderPayload(o: ExportOrder, ownerId: string) {
+  const safeItems = Array.isArray(o.items)
+    ? o.items.slice(0, BLUEPRINT_LIMITS.MAX_ORDER_ITEMS).map(sanitizeOrderItem)
+    : [];
+
+  return {
+    id: sanitizeId(o.id, 'ord'),
+    ownerId,
+    invoiceNo: clampNonEmptyStr(o.invoiceNo, BLUEPRINT_LIMITS.INVOICE_MAX, `HL-INV-${Date.now()}`),
+    poNo: clampStr(o.poNo, BLUEPRINT_LIMITS.INVOICE_MAX),
+    orderDate: clampStr(o.orderDate, BLUEPRINT_LIMITS.DATE_MAX),
+    paymentTerms: clampStr(o.paymentTerms, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    currency: clampCurrency(o.currency),
+    supplierId: clampStr(o.supplierId, BLUEPRINT_LIMITS.ID_MAX),
+    customerId: clampStr(o.customerId, BLUEPRINT_LIMITS.ID_MAX),
+    bankAccountId: clampStr(o.bankAccountId, BLUEPRINT_LIMITS.ID_MAX),
+    items: safeItems,
+    shipping: {
+      mode: clampTransportMode(o.shipping?.mode),
+      logisticsProviderId: clampStr(o.shipping?.logisticsProviderId, BLUEPRINT_LIMITS.ID_MAX),
+      incoterm: clampIncoterm(o.shipping?.incoterm),
+      incotermPlace: clampStr(o.shipping?.incotermPlace, BLUEPRINT_LIMITS.MEDIUM_MAX),
+      portOfLoading: clampStr(o.shipping?.portOfLoading, BLUEPRINT_LIMITS.MEDIUM_MAX),
+      portOfDischarge: clampStr(o.shipping?.portOfDischarge, BLUEPRINT_LIMITS.MEDIUM_MAX),
+      vesselOrFlightOrCourier: clampStr(
+        o.shipping?.vesselOrFlightOrCourier,
+        BLUEPRINT_LIMITS.MEDIUM_MAX,
+      ),
+      trackingOrBlNo: clampStr(o.shipping?.trackingOrBlNo, BLUEPRINT_LIMITS.MEDIUM_MAX),
+      etd: clampStr(o.shipping?.etd, BLUEPRINT_LIMITS.DATE_MAX),
+      eta: clampStr(o.shipping?.eta, BLUEPRINT_LIMITS.DATE_MAX),
+      shippingMarksMain: clampStr(o.shipping?.shippingMarksMain, BLUEPRINT_LIMITS.MEDIUM_MAX),
+      caseNumberPrefix: clampStr(o.shipping?.caseNumberPrefix, BLUEPRINT_LIMITS.SHORT_MAX),
+    },
+    costs: {
+      packingHandlingCost: nonNegNum(o.costs?.packingHandlingCost, 0),
+      inlandFreightCost: nonNegNum(o.costs?.inlandFreightCost, 0),
+      mainFreightCost: nonNegNum(o.costs?.mainFreightCost, 0),
+      insuranceMode:
+        o.costs?.insuranceMode === 'AUTO_PERCENT'
+          ? ('AUTO_PERCENT' as const)
+          : ('MANUAL' as const),
+      insuranceManualCost: nonNegNum(o.costs?.insuranceManualCost, 0),
+      insuranceRatePercent: nonNegNum(o.costs?.insuranceRatePercent, 0),
+      destinationHandlingCost: nonNegNum(o.costs?.destinationHandlingCost, 0),
+      importDutyTaxCost: nonNegNum(o.costs?.importDutyTaxCost, 0),
+    },
+    remarks: clampStr(o.remarks, BLUEPRINT_LIMITS.LONG_MAX),
+    orderCreatedAt: clampStr(o.createdAt, BLUEPRINT_LIMITS.TIMESTAMP_STR_MAX),
+    orderUpdatedAt: clampStr(o.updatedAt, BLUEPRINT_LIMITS.TIMESTAMP_STR_MAX),
+  };
+}
+
+export function sanitizeAuditLogPayload(log: AuditLogEntry, ownerId: string) {
+  const validActions: AuditLogEntry['action'][] = [
+    'CREATE_ORDER',
+    'UPDATE_ORDER',
+    'DELETE_ORDER',
+    'DUPLICATE_ORDER',
+    'MASTER_UPDATE',
+    'RESTORE_BACKUP',
+  ];
+  return {
+    id: sanitizeId(log.id, 'log'),
+    ownerId,
+    timestamp: clampNonEmptyStr(
+      log.timestamp,
+      BLUEPRINT_LIMITS.TIMESTAMP_STR_MAX,
+      new Date().toISOString(),
+    ),
+    action: validActions.includes(log.action) ? log.action : 'UPDATE_ORDER',
+    targetLabel: clampStr(log.targetLabel, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    summary: clampStr(log.summary, BLUEPRINT_LIMITS.LONG_MAX),
+  };
+}

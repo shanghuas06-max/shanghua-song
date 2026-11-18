@@ -1,0 +1,792 @@
+import type { TransportMode, UiLanguage } from '../types/erp';
+
+export interface UiDictionary {
+  brandTitle: string;
+  brandSub: string;
+  navOrder: string;
+  navDocuments: string;
+  navMaster: string;
+  navHistory: string;
+  uiLangLabel: string;
+  docLangLabel: string;
+  btnSaveOrder: string;
+  btnNewOrder: string;
+  btnPrintDoc: string;
+  btnDuplicateOrder: string;
+  savedToast: string;
+  orderSectionTitle: string;
+  orderPartiesTitle: string;
+  selectCustomer: string;
+  selectSupplier: string;
+  selectBank: string;
+  invoiceNo: string;
+  poNo: string;
+  orderDate: string;
+  currency: string;
+  paymentTerms: string;
+  remarks: string;
+  itemsSectionTitle: string;
+  addProductLabel: string;
+  btnAddCustomItem: string;
+  colSku: string;
+  colDescription: string;
+  colHsCode: string;
+  colQty: string;
+  colUnit: string;
+  colUnitPrice: string;
+  colCartons: string;
+  colWeightKg: string;
+  colAmount: string;
+  shippingSectionTitle: string;
+  transportMode: string;
+  modeLabels: Record<TransportMode, string>;
+  logisticsProvider: string;
+  incotermLabel: string;
+  incotermPlace: string;
+  portLoading: string;
+  portDischarge: string;
+  hubOrigin: string;
+  hubDestination: string;
+  vesselLabel: string;
+  flightLabel: string;
+  courierLabel: string;
+  truckLabel: string;
+  blNoLabel: string;
+  awbNoLabel: string;
+  trackingNoLabel: string;
+  waybillNoLabel: string;
+  etdLabel: string;
+  etaLabel: string;
+  shippingMarksMain: string;
+  caseNumberPrefix: string;
+  calcSectionTitle: string;
+  goodsSubtotal: string;
+  packingCost: string;
+  exwSubtotal: string;
+  inlandFreight: string;
+  mainFreight: string;
+  insuranceMode: string;
+  insuranceManual: string;
+  insuranceAuto: string;
+  insuranceRate: string;
+  insuranceCost: string;
+  destHandling: string;
+  importDuty: string;
+  finalTotal: string;
+  includedTag: string;
+  excludedTag: string;
+  totalQty: string;
+  totalCartons: string;
+  totalNw: string;
+  totalGw: string;
+  totalCbm: string;
+  docTabInvoice: string;
+  docTabPacking: string;
+  docTabCaseMark: string;
+  docTabAll: string;
+  docPrintHint: string;
+  masterCustomers: string;
+  masterSuppliers: string;
+  masterLogistics: string;
+  masterBanks: string;
+  masterProducts: string;
+  btnAddRecord: string;
+  btnEdit: string;
+  btnDelete: string;
+  btnSave: string;
+  btnCancel: string;
+  searchPlaceholder: string;
+  historyOrdersTitle: string;
+  historyLogsTitle: string;
+  historyBackupTitle: string;
+  btnLoadOrder: string;
+  btnExportBackup: string;
+  btnImportBackup: string;
+  btnCreateSnapshot: string;
+  btnRestoreSnapshot: string;
+  btnResetDemo: string;
+  backupDesc: string;
+  restoreSuccess: string;
+  restoreError: string;
+  confirmResetTitle: string;
+  confirmResetBody: string;
+  confirmAction: string;
+  emptyItems: string;
+  emptyOrders: string;
+  localSnapshotsTitle: string;
+  ordersUnit: string;
+  colInvoiceDate: string;
+  colCustomer: string;
+  colModeTerm: string;
+  colTotal: string;
+  colActions: string;
+  colCode: string;
+  colCustomerName: string;
+  colCountry: string;
+  colContact: string;
+  colDefaults: string;
+  colShipperName: string;
+  colExporterId: string;
+  colSignatory: string;
+  colLogisticsName: string;
+  colSupportedModes: string;
+  colDefaultHub: string;
+  colAccountContact: string;
+  colBankLabel: string;
+  colBankBranch: string;
+  colSwift: string;
+  colAccountNo: string;
+  colProductName: string;
+  colNwGw: string;
+  colPcsPerCtn: string;
+  lblCompanyName: string;
+  lblAddress: string;
+  lblEmail: string;
+  lblPhone: string;
+  lblDefaultCurrency: string;
+  lblDefaultIncoterm: string;
+  lblShipperName: string;
+  lblSignatoryName: string;
+  lblSignatoryTitle: string;
+  lblProviderName: string;
+  lblBankName: string;
+  lblBranchName: string;
+  lblBeneficiary: string;
+  lblDescEn: string;
+  lblDescLocal: string;
+  lblUnitsPerCarton: string;
+  lblUnitNw: string;
+  lblUnitGw: string;
+  authPortalTitle: string;
+  authPortalSub: string;
+  authTabLogin: string;
+  authTabRegister: string;
+  authTabReset: string;
+  authEmailLabel: string;
+  authPasswordLabel: string;
+  authConfirmPasswordLabel: string;
+  authDisplayNameLabel: string;
+  authCompanyNameLabel: string;
+  authBtnLogin: string;
+  authBtnRegister: string;
+  authBtnReset: string;
+  authBtnGoogle: string;
+  authOrDivider: string;
+  authFeatureIsolation: string;
+  authFeatureCloudSync: string;
+  authFeatureDocs: string;
+  authResetSent: string;
+  authVerifyTitle: string;
+  authVerifyDesc: string;
+  authBtnCheckVerified: string;
+  authBtnResendVerify: string;
+  authVerifyResent: string;
+  authVerifyNotYet: string;
+  authBtnSignOut: string;
+  authWorkspaceLoading: string;
+  authCloudSyncedBadge: string;
+  authErrInvalidCreds: string;
+  authErrEmailInUse: string;
+  authErrWeakPass: string;
+  authErrPasswordMismatch: string;
+  authErrMissingFields: string;
+  authErrProviderDisabled: string;
+  authErrGeneric: string;
+}
+
+export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
+  zh: {
+    brandTitle: 'HARDLOCK ERP',
+    brandSub: '出口单据与报价管理 v3',
+    navOrder: '订单与自动计价',
+    navDocuments: '单据生成与打印',
+    navMaster: '基础资料库',
+    navHistory: '历史记录与备份',
+    uiLangLabel: '管理界面语言',
+    docLangLabel: '出口单据语言',
+    btnSaveOrder: '保存订单',
+    btnNewOrder: '新建订单',
+    btnPrintDoc: '打印出口单据',
+    btnDuplicateOrder: '复制为新订单',
+    savedToast: '订单已保存并生成自动备份快照',
+    orderSectionTitle: '订单基础信息与往来单位',
+    orderPartiesTitle: '从基础资料库直接选择客户、供应商与收款银行',
+    selectCustomer: '客户 / 收货人 (Consignee)',
+    selectSupplier: '出口商 / 供应商 (Shipper)',
+    selectBank: '收款银行账户 (Bank)',
+    invoiceNo: '发票号 (Invoice No.)',
+    poNo: '客户订单号 (PO No.)',
+    orderDate: '单据日期',
+    currency: '结算币种',
+    paymentTerms: '付款方式',
+    remarks: '单据备注 (Remarks)',
+    itemsSectionTitle: '出口产品明细（自动联动重量、体积与货值）',
+    addProductLabel: '从产品库快速添加',
+    btnAddCustomItem: '添加空白行',
+    colSku: '型号 / SKU',
+    colDescription: '品名与规格',
+    colHsCode: 'HS编码',
+    colQty: '数量',
+    colUnit: '单位',
+    colUnitPrice: '单价',
+    colCartons: '箱数',
+    colWeightKg: '净重 / 毛重 (kg)',
+    colAmount: '金额',
+    shippingSectionTitle: '物流方式与贸易术语 (Incoterms 2020)',
+    transportMode: '运输方式',
+    modeLabels: {
+      SEA: '海运 Sea',
+      AIR: '空运 Air',
+      EXPRESS: '快递 Express',
+      LAND: '陆运 Land',
+    },
+    logisticsProvider: '物流服务商 (从基础资料选择)',
+    incotermLabel: '贸易术语 (Incoterm)',
+    incotermPlace: '交货地点 / 目的港',
+    portLoading: '起运港 (Port of Loading)',
+    portDischarge: '目的港 (Port of Discharge)',
+    hubOrigin: '始发站 / 转运中心',
+    hubDestination: '目的地城市 / 枢纽',
+    vesselLabel: '船名 / 航次 (Vessel/Voyage)',
+    flightLabel: '航班号 (Flight No.)',
+    courierLabel: '快递渠道 / 服务类型',
+    truckLabel: '承运车牌 / 口岸',
+    blNoLabel: '提单号 (B/L No.)',
+    awbNoLabel: '空运单号 (AWB No.)',
+    trackingNoLabel: '快递运单号 (Tracking No.)',
+    waybillNoLabel: '陆运单号 (Waybill No.)',
+    etdLabel: '预计发运 (ETD)',
+    etaLabel: '预计到达 (ETA)',
+    shippingMarksMain: '主唛头 (Main Mark)',
+    caseNumberPrefix: '箱号前缀',
+    calcSectionTitle: '费用联动与自动计价引擎',
+    goodsSubtotal: '商品总货值 (Goods Subtotal)',
+    packingCost: '包装及出口操作费',
+    exwSubtotal: 'EXW 出厂价小计 (自动联动)',
+    inlandFreight: '国内拖车与报关费',
+    mainFreight: '国际主运费 (海/空/快递/陆运)',
+    insuranceMode: '保险计费方式',
+    insuranceManual: '固定金额',
+    insuranceAuto: '按货值+运费 110% × 费率',
+    insuranceRate: '保险费率 (%)',
+    insuranceCost: '保险费 (Insurance)',
+    destHandling: '目的港操作 / 派送费',
+    importDuty: '目的国关税 / 增值税 (DDP)',
+    finalTotal: '最终报价总额',
+    includedTag: '计入当前术语',
+    excludedTag: '不计入当前术语',
+    totalQty: '总数量',
+    totalCartons: '总箱数',
+    totalNw: '总净重 (N.W.)',
+    totalGw: '总毛重 (G.W.)',
+    totalCbm: '总体积 (CBM)',
+    docTabInvoice: '商业发票 (Invoice)',
+    docTabPacking: '装箱单 (Packing List)',
+    docTabCaseMark: '箱唛标签 (Case Mark)',
+    docTabAll: '全套单据联打 (All 3)',
+    docPrintHint: '已修复打印样式冲突：点击右侧打印按钮可直接输出标准 A4 纸张单据，管理界面语言与单据语言相互独立。',
+    masterCustomers: '客户档案',
+    masterSuppliers: '供应商 / 出口方',
+    masterLogistics: '物流服务商',
+    masterBanks: '银行账户',
+    masterProducts: '产品库',
+    btnAddRecord: '新增资料',
+    btnEdit: '编辑',
+    btnDelete: '删除',
+    btnSave: '保存更改',
+    btnCancel: '取消',
+    searchPlaceholder: '输入名称、编码或国家筛选...',
+    historyOrdersTitle: '历史出口订单',
+    historyLogsTitle: '操作与修改记录',
+    historyBackupTitle: '数据持久化与备份恢复',
+    btnLoadOrder: '载入编辑',
+    btnExportBackup: '导出完整备份 (.json)',
+    btnImportBackup: '从备份文件恢复',
+    btnCreateSnapshot: '立即创建本地快照',
+    btnRestoreSnapshot: '恢复此快照',
+    btnResetDemo: '重置为演示数据',
+    backupDesc: '浏览器本地存储可长期保留数据，但清除缓存或更换电脑时建议导出 JSON 备份文件。每次保存订单时系统也会自动创建快照。',
+    restoreSuccess: '备份数据已成功恢复！',
+    restoreError: '备份文件格式无效，请选择由本系统导出的 JSON 文件。',
+    confirmResetTitle: '确认重置为初始演示数据？',
+    confirmResetBody: '这将清空您当前新增或修改的订单与基础资料。建议先导出 JSON 备份。',
+    confirmAction: '确认重置',
+    emptyItems: '暂无产品明细，请从上方产品库选择或添加空白行。',
+    emptyOrders: '暂无已保存的历史订单。',
+    localSnapshotsTitle: '本地自动备份快照',
+    ordersUnit: '笔订单',
+    colInvoiceDate: '发票号 / 日期',
+    colCustomer: '客户名称',
+    colModeTerm: '运输方式 · 贸易术语',
+    colTotal: '订单总额',
+    colActions: '操作',
+    colCode: '编码',
+    colCustomerName: '客户名称与地址',
+    colCountry: '国家/地区',
+    colContact: '联系人',
+    colDefaults: '默认条款',
+    colShipperName: '出口方 / 供应商',
+    colExporterId: '出口商/税号',
+    colSignatory: '授权签署人',
+    colLogisticsName: '物流服务商',
+    colSupportedModes: '支持运输方式',
+    colDefaultHub: '默认港口 / 转运枢纽',
+    colAccountContact: '物流账号 / 电话',
+    colBankLabel: '账户简称',
+    colBankBranch: '银行与分行',
+    colSwift: 'SWIFT 代码',
+    colAccountNo: '银行账号',
+    colProductName: '产品名称与规格',
+    colNwGw: '单件净重 / 毛重',
+    colPcsPerCtn: '每箱数量',
+    lblCompanyName: '公司全称',
+    lblAddress: '详细地址',
+    lblEmail: '电子邮箱',
+    lblPhone: '联系电话',
+    lblDefaultCurrency: '默认币种',
+    lblDefaultIncoterm: '默认贸易术语',
+    lblShipperName: '出口商 / 供应商名称',
+    lblSignatoryName: '签署人姓名',
+    lblSignatoryTitle: '签署人职务',
+    lblProviderName: '物流公司名称',
+    lblBankName: '开户行名称',
+    lblBranchName: '支行名称',
+    lblBeneficiary: '收款人户名',
+    lblDescEn: '英文品名 (用于出口单据)',
+    lblDescLocal: '中文 / 日文品名',
+    lblUnitsPerCarton: '每箱默认数量',
+    lblUnitNw: '单件净重 (kg)',
+    lblUnitGw: '单件毛重 (kg)',
+    authPortalTitle: '出口管理云端独立工作台',
+    authPortalSub: '每位成员拥有独立账号与隔离数据库，支持多设备实时同步订单、基础资料与单据。',
+    authTabLogin: '账号登录',
+    authTabRegister: '注册独立账号',
+    authTabReset: '忘记密码',
+    authEmailLabel: '登录邮箱 (账号)',
+    authPasswordLabel: '登录密码',
+    authConfirmPasswordLabel: '确认密码',
+    authDisplayNameLabel: '操作人姓名',
+    authCompanyNameLabel: '所属公司 / 部门',
+    authBtnLogin: '登录进入系统',
+    authBtnRegister: '创建独立账号',
+    authBtnReset: '发送重置密码邮件',
+    authBtnGoogle: '使用 Google 账号快捷登录',
+    authOrDivider: '或',
+    authFeatureIsolation: '按账号严格隔离：客户、产品、物流商与订单互不干扰',
+    authFeatureCloudSync: '云端实时保存：换电脑或清缓存后登录账号即可恢复',
+    authFeatureDocs: '完整单据输出：10种 Incoterms、多运输方式联动与 A4 打印',
+    authResetSent: '密码重置邮件已发送，请查收邮箱并按提示重设密码。',
+    authVerifyTitle: '请先完成邮箱验证以激活您的独立空间',
+    authVerifyDesc: '我们已向以下邮箱发送验证链接，请点击邮件中的确认链接后再点击下方按钮进入系统：',
+    authBtnCheckVerified: '我已完成验证，进入系统',
+    authBtnResendVerify: '重新发送验证邮件',
+    authVerifyResent: '验证邮件已重新发送，请注意查收（含垃圾邮件箱）。',
+    authVerifyNotYet: '尚未检测到验证完成，请先点击邮件中的链接后再试。',
+    authBtnSignOut: '退出登录',
+    authWorkspaceLoading: '正在同步您的独立云端工作台...',
+    authCloudSyncedBadge: '云端已同步 · 独立空间',
+    authErrInvalidCreds: '邮箱或密码不正确，请核对后重试。',
+    authErrEmailInUse: '该邮箱已注册账号，请直接登录或使用忘记密码。',
+    authErrWeakPass: '密码强度不足，请设置至少 6 位字符的密码。',
+    authErrPasswordMismatch: '两次输入的密码不一致，请检查。',
+    authErrMissingFields: '请完整填写邮箱与密码后再提交。',
+    authErrProviderDisabled: '当前 Firebase 项目尚未开启「电子邮件/密码」登录方式，请在 Firebase 控制台 Authentication -> Sign-in method 中启用，或先使用 Google 快捷登录。',
+    authErrGeneric: '登录验证失败，请稍后重试。',
+  },
+  ja: {
+    brandTitle: 'HARDLOCK ERP',
+    brandSub: '輸出書類・見積管理システム v3',
+    navOrder: '受注・自動見積計算',
+    navDocuments: '輸出書類・印刷',
+    navMaster: 'マスタデータ管理',
+    navHistory: '履歴・バックアップ復元',
+    uiLangLabel: '管理画面の言語',
+    docLangLabel: '輸出書類の言語',
+    btnSaveOrder: '受注データを保存',
+    btnNewOrder: '新規受注作成',
+    btnPrintDoc: '輸出書類を印刷',
+    btnDuplicateOrder: '複製して新規作成',
+    savedToast: '受注データを保存し、自動バックアップを作成しました',
+    orderSectionTitle: '受注基本情報・取引先選択',
+    orderPartiesTitle: 'マスタデータから荷受人・荷送人・振込先銀行を選択',
+    selectCustomer: '荷受人 / 顧客 (Consignee)',
+    selectSupplier: '輸出者 / 荷送人 (Shipper)',
+    selectBank: '受取銀行口座 (Bank)',
+    invoiceNo: 'インボイス番号 (Invoice No.)',
+    poNo: '注文番号 (PO No.)',
+    orderDate: '発行日 (Date)',
+    currency: '決済通貨',
+    paymentTerms: '支払条件',
+    remarks: '備考 (Remarks)',
+    itemsSectionTitle: '輸出明細（重量・容積・金額を自動連動）',
+    addProductLabel: '製品マスタから追加',
+    btnAddCustomItem: '空行を追加',
+    colSku: '型番 / SKU',
+    colDescription: '品名・仕様',
+    colHsCode: 'HSコード',
+    colQty: '数量',
+    colUnit: '単位',
+    colUnitPrice: '単価',
+    colCartons: 'ケース数',
+    colWeightKg: '正味 / 総重量 (kg)',
+    colAmount: '金額',
+    shippingSectionTitle: '輸送手段・貿易条件 (Incoterms 2020)',
+    transportMode: '輸送モード',
+    modeLabels: {
+      SEA: '海上輸送',
+      AIR: '航空輸送',
+      EXPRESS: '国際クーリエ',
+      LAND: '陸上輸送',
+    },
+    logisticsProvider: 'フォワーダー / 物流業者',
+    incotermLabel: '貿易条件 (Incoterm)',
+    incotermPlace: '引渡地 / 仕向地',
+    portLoading: '積出港 (Port of Loading)',
+    portDischarge: '荷揚港 (Port of Discharge)',
+    hubOrigin: '発送ハブ / 拠点',
+    hubDestination: '到着都市 / ハブ',
+    vesselLabel: '本船名 / 航海番号',
+    flightLabel: '航空便名 (Flight No.)',
+    courierLabel: 'クーリエ便種',
+    truckLabel: 'トラック便 / 通関地点',
+    blNoLabel: 'B/L番号',
+    awbNoLabel: 'AWB番号',
+    trackingNoLabel: '送り状番号 (Tracking)',
+    waybillNoLabel: '運送状番号 (Waybill)',
+    etdLabel: '出港予定日 (ETD)',
+    etaLabel: '到着予定日 (ETA)',
+    shippingMarksMain: 'メインマーク (Main Mark)',
+    caseNumberPrefix: 'ケース番号接頭辞',
+    calcSectionTitle: '自動連動計算・インコタームズ積算',
+    goodsSubtotal: '商品代金小計 (Goods Subtotal)',
+    packingCost: '梱包・輸出通関諸掛',
+    exwSubtotal: 'EXW 工場渡価格 (自動連動)',
+    inlandFreight: '国内輸送・船積費用',
+    mainFreight: '国際主運賃 (海/空/クーリエ/陸)',
+    insuranceMode: '保険料計算方式',
+    insuranceManual: '固定額入力',
+    insuranceAuto: '110% × 保険料率 (%)',
+    insuranceRate: '保険料率 (%)',
+    insuranceCost: '貨物保険料 (Insurance)',
+    destHandling: '仕向地取扱・配送費',
+    importDuty: '輸入関税・諸税 (DDP)',
+    finalTotal: '最終見積合計',
+    includedTag: '条件に含む',
+    excludedTag: '条件外',
+    totalQty: '総数量',
+    totalCartons: '総ケース数',
+    totalNw: '総正味重量 (N.W.)',
+    totalGw: '総重量 (G.W.)',
+    totalCbm: '総容積 (CBM)',
+    docTabInvoice: 'インボイス (Invoice)',
+    docTabPacking: 'パッキングリスト (P/L)',
+    docTabCaseMark: 'ケースマーク (Case Mark)',
+    docTabAll: '3種一括印刷 (All 3)',
+    docPrintHint: '印刷CSSを刷新済みです。管理画面は日本語のまま、輸出書類は英語フォーマット等で個別出力できます。',
+    masterCustomers: '顧客マスタ',
+    masterSuppliers: '荷送人・自社拠点',
+    masterLogistics: '物流業者マスタ',
+    masterBanks: '銀行口座マスタ',
+    masterProducts: '製品マスタ',
+    btnAddRecord: '新規登録',
+    btnEdit: '編集',
+    btnDelete: '削除',
+    btnSave: '保存',
+    btnCancel: 'キャンセル',
+    searchPlaceholder: '名称・コード・国名で検索...',
+    historyOrdersTitle: '受注・書類履歴',
+    historyLogsTitle: '変更・操作ログ',
+    historyBackupTitle: 'データ保全・バックアップ復元',
+    btnLoadOrder: '開く',
+    btnExportBackup: 'JSONバックアップ出力',
+    btnImportBackup: 'バックアップから復元',
+    btnCreateSnapshot: '今すぐスナップショット保存',
+    btnRestoreSnapshot: 'この時点へ復元',
+    btnResetDemo: '初期デモデータに戻す',
+    backupDesc: 'ブラウザ内に保存されますが、キャッシュ削除やPC移行に備えJSONバックアップの出力が可能です。受注保存時に自動スナップショットも記録されます。',
+    restoreSuccess: 'バックアップデータを復元しました。',
+    restoreError: '無効なバックアップファイルです。本システム出力のJSONを選択してください。',
+    confirmResetTitle: '初期データにリセットしますか？',
+    confirmResetBody: '現在のマスタおよび受注履歴が初期状態に戻ります。必要に応じ事前にバックアップを出力してください。',
+    confirmAction: 'リセット実行',
+    emptyItems: '明細がありません。製品マスタから選択するか空行を追加してください。',
+    emptyOrders: '保存された受注履歴はありません。',
+    localSnapshotsTitle: 'ローカルスナップショット',
+    ordersUnit: '件',
+    colInvoiceDate: 'インボイス番号 / 日付',
+    colCustomer: '顧客名',
+    colModeTerm: '輸送手段 · 条件',
+    colTotal: '合計金額',
+    colActions: '操作',
+    colCode: 'コード',
+    colCustomerName: '顧客名・住所',
+    colCountry: '国・地域',
+    colContact: '担当者',
+    colDefaults: '初期条件',
+    colShipperName: '荷送人 / 輸出者',
+    colExporterId: '輸出者ID / 税番',
+    colSignatory: '署名者',
+    colLogisticsName: '物流業者名',
+    colSupportedModes: '対応輸送モード',
+    colDefaultHub: '標準港 / ハブ',
+    colAccountContact: 'アカウント / 電話',
+    colBankLabel: '口座ラベル',
+    colBankBranch: '銀行・支店名',
+    colSwift: 'SWIFTコード',
+    colAccountNo: '口座番号',
+    colProductName: '製品名・仕様',
+    colNwGw: '単体正味 / 総重量',
+    colPcsPerCtn: '入数/箱',
+    lblCompanyName: '会社名',
+    lblAddress: '住所',
+    lblEmail: 'メール',
+    lblPhone: '電話番号',
+    lblDefaultCurrency: '既定通貨',
+    lblDefaultIncoterm: '既定インコタームズ',
+    lblShipperName: '輸出者 / 荷送人名',
+    lblSignatoryName: '署名者氏名',
+    lblSignatoryTitle: '署名者役職',
+    lblProviderName: '物流業者名',
+    lblBankName: '銀行名',
+    lblBranchName: '支店名',
+    lblBeneficiary: '受取人名義',
+    lblDescEn: '英語品名（書類記載用）',
+    lblDescLocal: '日本語 / 現地品名',
+    lblUnitsPerCarton: '1ケース入数',
+    lblUnitNw: '単体正味重量 (kg)',
+    lblUnitGw: '単体総重量 (kg)',
+    authPortalTitle: 'クラウド独立輸出ワークスペース',
+    authPortalSub: '担当者ごとに独立したアカウントと分離データベースを割り当て、受注・マスタ・書類をリアルタイム同期します。',
+    authTabLogin: 'ログイン',
+    authTabRegister: '新規アカウント登録',
+    authTabReset: 'パスワード再設定',
+    authEmailLabel: 'メールアドレス (ID)',
+    authPasswordLabel: 'パスワード',
+    authConfirmPasswordLabel: 'パスワード確認',
+    authDisplayNameLabel: '担当者名',
+    authCompanyNameLabel: '会社名 / 部署',
+    authBtnLogin: 'ログイン',
+    authBtnRegister: '独立アカウントを作成',
+    authBtnReset: '再設定メールを送信',
+    authBtnGoogle: 'Google アカウントでログイン',
+    authOrDivider: 'または',
+    authFeatureIsolation: '完全なアカウント分離：顧客・製品・受注データを個別管理',
+    authFeatureCloudSync: 'クラウド自動同期：別のPCやブラウザからいつでも復元可能',
+    authFeatureDocs: '輸出書類一括作成：Incoterms 2020・4輸送モード・A4印刷対応',
+    authResetSent: 'パスワード再設定メールを送信しました。メールをご確認ください。',
+    authVerifyTitle: 'メールアドレスの確認を完了してください',
+    authVerifyDesc: '確認メールを送信しました。メール内のリンクをクリックした後、下のボタンを押してください：',
+    authBtnCheckVerified: '確認完了・システムへ進む',
+    authBtnResendVerify: '確認メールを再送信',
+    authVerifyResent: '確認メールを再送信しました。',
+    authVerifyNotYet: 'まだ確認が完了していません。メール内のリンクをクリックしてから再度お試しください。',
+    authBtnSignOut: 'ログアウト',
+    authWorkspaceLoading: '独立クラウドワークスペースを読み込み中...',
+    authCloudSyncedBadge: 'クラウド同期中 · 独立空間',
+    authErrInvalidCreds: 'メールアドレスまたはパスワードが正しくありません。',
+    authErrEmailInUse: 'このメールアドレスは既に登録されています。',
+    authErrWeakPass: 'パスワードは6文字以上で入力してください。',
+    authErrPasswordMismatch: '確認用パスワードが一致しません。',
+    authErrMissingFields: 'メールアドレスとパスワードを入力してください。',
+    authErrProviderDisabled: 'Firebaseコンソールで「メール/パスワード」認証が有効になっていません。設定を有効にするか、Googleログインをご利用ください。',
+    authErrGeneric: '認証エラーが発生しました。もう一度お試しください。',
+  },
+  en: {
+    brandTitle: 'HARDLOCK ERP',
+    brandSub: 'Export Operations & Docs v3',
+    navOrder: 'Order & Auto-Calc',
+    navDocuments: 'Documents & Print',
+    navMaster: 'Master Data',
+    navHistory: 'History & Backup',
+    uiLangLabel: 'Management UI Language',
+    docLangLabel: 'Export Document Language',
+    btnSaveOrder: 'Save Order',
+    btnNewOrder: 'New Order',
+    btnPrintDoc: 'Print Documents',
+    btnDuplicateOrder: 'Duplicate Order',
+    savedToast: 'Order saved with automatic backup snapshot',
+    orderSectionTitle: 'Order Header & Parties',
+    orderPartiesTitle: 'Select registered Customer, Shipper, and Bank from Master Data',
+    selectCustomer: 'Consignee / Customer',
+    selectSupplier: 'Shipper / Exporter',
+    selectBank: 'Remittance Bank Account',
+    invoiceNo: 'Invoice No.',
+    poNo: 'Customer PO No.',
+    orderDate: 'Order Date',
+    currency: 'Currency',
+    paymentTerms: 'Payment Terms',
+    remarks: 'Document Remarks',
+    itemsSectionTitle: 'Line Items (Linked Weight, CBM & Value)',
+    addProductLabel: 'Add from Product Catalog',
+    btnAddCustomItem: 'Add Blank Row',
+    colSku: 'SKU / Part No.',
+    colDescription: 'Description',
+    colHsCode: 'HS Code',
+    colQty: 'Qty',
+    colUnit: 'Unit',
+    colUnitPrice: 'Unit Price',
+    colCartons: 'Cases',
+    colWeightKg: 'N.W. / G.W. (kg)',
+    colAmount: 'Amount',
+    shippingSectionTitle: 'Shipping Mode & Incoterms 2020',
+    transportMode: 'Transport Mode',
+    modeLabels: {
+      SEA: 'Sea Freight',
+      AIR: 'Air Cargo',
+      EXPRESS: 'Express',
+      LAND: 'Land Freight',
+    },
+    logisticsProvider: 'Logistics Provider',
+    incotermLabel: 'Incoterm 2020',
+    incotermPlace: 'Named Place / Port',
+    portLoading: 'Port of Loading',
+    portDischarge: 'Port of Discharge',
+    hubOrigin: 'Origin Hub / Facility',
+    hubDestination: 'Destination City / Hub',
+    vesselLabel: 'Vessel / Voyage',
+    flightLabel: 'Flight No.',
+    courierLabel: 'Courier Service',
+    truckLabel: 'Truck / Border Crossing',
+    blNoLabel: 'B/L No.',
+    awbNoLabel: 'MAWB / HAWB No.',
+    trackingNoLabel: 'Tracking / Waybill No.',
+    waybillNoLabel: 'CMR / Waybill No.',
+    etdLabel: 'ETD',
+    etaLabel: 'ETA',
+    shippingMarksMain: 'Main Shipping Mark',
+    caseNumberPrefix: 'Case No. Prefix',
+    calcSectionTitle: 'Linked Auto-Calculation Engine',
+    goodsSubtotal: 'Goods Subtotal',
+    packingCost: 'Export Packing & Handling',
+    exwSubtotal: 'EXW Subtotal (Auto-Linked)',
+    inlandFreight: 'Inland Freight & Clearance',
+    mainFreight: 'Main Freight (Sea/Air/Express/Land)',
+    insuranceMode: 'Insurance Calculation',
+    insuranceManual: 'Fixed Amount',
+    insuranceAuto: '110% Insured Value × Rate %',
+    insuranceRate: 'Rate (%)',
+    insuranceCost: 'Cargo Insurance',
+    destHandling: 'Destination Handling / Delivery',
+    importDuty: 'Import Duty & Tax (DDP)',
+    finalTotal: 'Final Incoterm Total',
+    includedTag: 'Included',
+    excludedTag: 'Excluded',
+    totalQty: 'Total Qty',
+    totalCartons: 'Total Cases',
+    totalNw: 'Total Net Weight',
+    totalGw: 'Total Gross Weight',
+    totalCbm: 'Total Volume (CBM)',
+    docTabInvoice: 'Commercial Invoice',
+    docTabPacking: 'Packing List',
+    docTabCaseMark: 'Case Mark',
+    docTabAll: 'Print All 3 Docs',
+    docPrintHint: 'Print CSS renders clean A4 sheets independently of management UI language.',
+    masterCustomers: 'Customers',
+    masterSuppliers: 'Shippers',
+    masterLogistics: 'Logistics',
+    masterBanks: 'Banks',
+    masterProducts: 'Products',
+    btnAddRecord: 'Add Record',
+    btnEdit: 'Edit',
+    btnDelete: 'Delete',
+    btnSave: 'Save',
+    btnCancel: 'Cancel',
+    searchPlaceholder: 'Filter by name, code, or country...',
+    historyOrdersTitle: 'Saved Export Orders',
+    historyLogsTitle: 'Revision Audit Log',
+    historyBackupTitle: 'Data Persistence & Backup',
+    btnLoadOrder: 'Open in Editor',
+    btnExportBackup: 'Export JSON Backup',
+    btnImportBackup: 'Restore from JSON',
+    btnCreateSnapshot: 'Create Snapshot Now',
+    btnRestoreSnapshot: 'Restore',
+    btnResetDemo: 'Reset Demo Data',
+    backupDesc: 'Data persists in your browser. Export JSON backups before clearing browser storage or migrating PCs.',
+    restoreSuccess: 'Backup restored successfully.',
+    restoreError: 'Invalid backup file format.',
+    confirmResetTitle: 'Reset to factory demo data?',
+    confirmResetBody: 'This will replace all current orders and master data with initial sample records.',
+    confirmAction: 'Confirm Reset',
+    emptyItems: 'No items yet. Select a product above or add a blank row.',
+    emptyOrders: 'No saved orders in history.',
+    localSnapshotsTitle: 'Local Snapshots',
+    ordersUnit: 'orders',
+    colInvoiceDate: 'Invoice / Date',
+    colCustomer: 'Customer',
+    colModeTerm: 'Mode · Term',
+    colTotal: 'Total',
+    colActions: 'Actions',
+    colCode: 'Code',
+    colCustomerName: 'Customer Name',
+    colCountry: 'Country',
+    colContact: 'Contact',
+    colDefaults: 'Defaults',
+    colShipperName: 'Shipper / Exporter',
+    colExporterId: 'Exporter ID',
+    colSignatory: 'Signatory',
+    colLogisticsName: 'Logistics Provider',
+    colSupportedModes: 'Supported Modes',
+    colDefaultHub: 'Default Port / Hub',
+    colAccountContact: 'Account / Contact',
+    colBankLabel: 'Account Label',
+    colBankBranch: 'Bank & Branch',
+    colSwift: 'SWIFT',
+    colAccountNo: 'Account No.',
+    colProductName: 'Product Name',
+    colNwGw: 'N.W. / G.W.',
+    colPcsPerCtn: 'Pcs / Ctn',
+    lblCompanyName: 'Company Name',
+    lblAddress: 'Address',
+    lblEmail: 'Email',
+    lblPhone: 'Phone',
+    lblDefaultCurrency: 'Default Currency',
+    lblDefaultIncoterm: 'Default Incoterm',
+    lblShipperName: 'Shipper / Exporter Name',
+    lblSignatoryName: 'Signatory Name',
+    lblSignatoryTitle: 'Signatory Title',
+    lblProviderName: 'Provider Name',
+    lblBankName: 'Bank Name',
+    lblBranchName: 'Branch Name',
+    lblBeneficiary: 'Beneficiary Name',
+    lblDescEn: 'Description (English)',
+    lblDescLocal: 'Local Description (JP/CN)',
+    lblUnitsPerCarton: 'Units / Carton',
+    lblUnitNw: 'Unit Net Weight (kg)',
+    lblUnitGw: 'Unit Gross Weight (kg)',
+    authPortalTitle: 'Isolated Cloud Export Workspace',
+    authPortalSub: 'Every operator gets a private account and isolated cloud database for orders, master data, and A4 export documents.',
+    authTabLogin: 'Sign In',
+    authTabRegister: 'Create Account',
+    authTabReset: 'Reset Password',
+    authEmailLabel: 'Email Address',
+    authPasswordLabel: 'Password',
+    authConfirmPasswordLabel: 'Confirm Password',
+    authDisplayNameLabel: 'Operator Name',
+    authCompanyNameLabel: 'Company / Department',
+    authBtnLogin: 'Sign In to Workspace',
+    authBtnRegister: 'Create Private Account',
+    authBtnReset: 'Send Reset Link',
+    authBtnGoogle: 'Continue with Google',
+    authOrDivider: 'or',
+    authFeatureIsolation: 'Strict tenant isolation per account across all master data & orders',
+    authFeatureCloudSync: 'Real-time cloud persistence across browsers and computers',
+    authFeatureDocs: 'Incoterms 2020 auto-calc, multi-mode logistics & clean A4 print',
+    authResetSent: 'Password reset email sent. Check your inbox for instructions.',
+    authVerifyTitle: 'Verify Your Email to Unlock Your Workspace',
+    authVerifyDesc: 'A verification link has been sent to the email below. Click the link, then continue:',
+    authBtnCheckVerified: 'I Have Verified — Enter ERP',
+    authBtnResendVerify: 'Resend Verification Email',
+    authVerifyResent: 'Verification email sent again.',
+    authVerifyNotYet: 'Email is not verified yet. Please click the link in your inbox first.',
+    authBtnSignOut: 'Sign Out',
+    authWorkspaceLoading: 'Syncing your isolated cloud workspace...',
+    authCloudSyncedBadge: 'Cloud Synced · Isolated',
+    authErrInvalidCreds: 'Invalid email or password.',
+    authErrEmailInUse: 'An account with this email already exists.',
+    authErrWeakPass: 'Password must be at least 6 characters.',
+    authErrPasswordMismatch: 'Passwords do not match.',
+    authErrMissingFields: 'Please enter both email and password.',
+    authErrProviderDisabled: 'Email/Password sign-in is not yet enabled in Firebase Console (Authentication -> Sign-in method). Enable it or sign in with Google.',
+    authErrGeneric: 'Authentication failed. Please try again.',
+  },
+};

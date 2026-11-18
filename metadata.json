@@ -1,0 +1,6 @@
+{
+  "name": "HARDLOCK Export Management System v3",
+  "description": "Industrial export ERP with master data registries, multi-mode shipping, Incoterms 2020 auto-calculation, bilingual UI/document generation, and backup history.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

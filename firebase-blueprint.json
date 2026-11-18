@@ -1,0 +1,249 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile and ERP workspace preferences isolated per authenticated user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID matching the document ID."
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 240,
+          "description": "Verified account email address."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240,
+          "description": "Operator display name."
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240,
+          "description": "User company or department label."
+        },
+        "uiLang": {
+          "type": "string",
+          "enum": ["zh", "ja", "en"],
+          "description": "Management UI language."
+        },
+        "docLang": {
+          "type": "string",
+          "enum": ["en", "ja", "zh"],
+          "description": "Export document generation language."
+        },
+        "activeOrderId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128,
+          "description": "Currently selected order ID in workspace."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workspace was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workspace preferences were last updated."
+        }
+      },
+      "required": ["uid", "email", "displayName", "companyName", "uiLang", "docLang", "activeOrderId", "createdAt", "updatedAt"]
+    },
+    "CustomerRecord": {
+      "title": "CustomerRecord",
+      "description": "Customer / consignee master record owned by a single user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "country": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "address": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "contactName": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "email": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "phone": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "defaultCurrency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
+        "defaultIncoterm": { "type": "string", "enum": ["EXW", "FCA", "FOB", "CFR", "CIF", "CPT", "CIP", "DAP", "DPU", "DDP"] },
+        "notifyParty": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "code", "name", "country", "address", "contactName", "email", "phone", "defaultCurrency", "defaultIncoterm", "notifyParty", "createdAt", "updatedAt"]
+    },
+    "SupplierRecord": {
+      "title": "SupplierRecord",
+      "description": "Shipper / exporter master record owned by a single user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "country": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "address": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "contactName": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "email": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "phone": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "taxOrExporterId": { "type": "string", "minLength": 0, "maxLength": 100 },
+        "signatoryName": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "signatoryTitle": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "code", "name", "country", "address", "contactName", "email", "phone", "taxOrExporterId", "signatoryName", "signatoryTitle", "createdAt", "updatedAt"]
+    },
+    "LogisticsProviderRecord": {
+      "title": "LogisticsProviderRecord",
+      "description": "Logistics forwarder / courier master record owned by a single user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "supportedModes": { "type": "array", "description": "Up to 4 transport modes (SEA, AIR, EXPRESS, LAND)." },
+        "contactName": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "phone": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "email": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "accountNo": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "defaultPortOrHub": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "code", "name", "supportedModes", "contactName", "phone", "email", "accountNo", "defaultPortOrHub", "createdAt", "updatedAt"]
+    },
+    "BankAccountRecord": {
+      "title": "BankAccountRecord",
+      "description": "Remittance bank account master record owned by a single user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "bankName": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "branchName": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "swiftCode": { "type": "string", "minLength": 0, "maxLength": 80 },
+        "accountName": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "accountNumber": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "currency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
+        "bankAddress": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "label", "bankName", "branchName", "swiftCode", "accountName", "accountNumber", "currency", "bankAddress", "createdAt", "updatedAt"]
+    },
+    "ProductRecord": {
+      "title": "ProductRecord",
+      "description": "Export product catalog record owned by a single user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "nameEn": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "nameLocal": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "hsCode": { "type": "string", "minLength": 0, "maxLength": 80 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "unitPrice": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
+        "unitNetWeightKg": { "type": "number" },
+        "unitGrossWeightKg": { "type": "number" },
+        "defaultUnitsPerCarton": { "type": "number" },
+        "cartonLengthCm": { "type": "number" },
+        "cartonWidthCm": { "type": "number" },
+        "cartonHeightCm": { "type": "number" },
+        "originCountry": { "type": "string", "minLength": 0, "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "sku", "nameEn", "nameLocal", "hsCode", "unit", "unitPrice", "currency", "unitNetWeightKg", "unitGrossWeightKg", "defaultUnitsPerCarton", "cartonLengthCm", "cartonWidthCm", "cartonHeightCm", "originCountry", "createdAt", "updatedAt"]
+    },
+    "OrderRecord": {
+      "title": "OrderRecord",
+      "description": "Export order including items (max 50), shipping terms, and cost breakdown owned by a single user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "invoiceNo": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "poNo": { "type": "string", "minLength": 0, "maxLength": 100 },
+        "orderDate": { "type": "string", "minLength": 0, "maxLength": 40 },
+        "paymentTerms": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "currency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
+        "supplierId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "customerId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "bankAccountId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "items": { "type": "array", "description": "Bounded list of up to 50 order line items." },
+        "shipping": { "type": "object", "description": "Shipping mode, Incoterm 2020, ports, tracking, and marks." },
+        "costs": { "type": "object", "description": "Packing, freight, insurance, destination, and duty costs." },
+        "remarks": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "orderCreatedAt": { "type": "string", "minLength": 0, "maxLength": 64 },
+        "orderUpdatedAt": { "type": "string", "minLength": 0, "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "invoiceNo", "poNo", "orderDate", "paymentTerms", "currency", "supplierId", "customerId", "bankAccountId", "items", "shipping", "costs", "remarks", "orderCreatedAt", "orderUpdatedAt", "createdAt", "updatedAt"]
+    },
+    "AuditLogRecord": {
+      "title": "AuditLogRecord",
+      "description": "Immutable revision audit log entry owned by a single user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timestamp": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "action": { "type": "string", "enum": ["CREATE_ORDER", "UPDATE_ORDER", "DELETE_ORDER", "DUPLICATE_ORDER", "MASTER_UPDATE", "RESTORE_BACKUP"] },
+        "targetLabel": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "summary": { "type": "string", "minLength": 0, "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "timestamp", "action", "targetLabel", "summary", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User workspace profile and language/active-order preferences, private to userId."
+    },
+    "/users/{userId}/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/CustomerRecord" },
+      "description": "Per-user customer master records."
+    },
+    "/users/{userId}/suppliers/{supplierId}": {
+      "schema": { "$ref": "#/entities/SupplierRecord" },
+      "description": "Per-user supplier/exporter master records."
+    },
+    "/users/{userId}/logisticsProviders/{providerId}": {
+      "schema": { "$ref": "#/entities/LogisticsProviderRecord" },
+      "description": "Per-user logistics provider master records."
+    },
+    "/users/{userId}/bankAccounts/{bankId}": {
+      "schema": { "$ref": "#/entities/BankAccountRecord" },
+      "description": "Per-user bank account master records."
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/ProductRecord" },
+      "description": "Per-user product catalog records."
+    },
+    "/users/{userId}/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/OrderRecord" },
+      "description": "Per-user export orders."
+    },
+    "/users/{userId}/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLogRecord" },
+      "description": "Per-user revision audit trail."
+    }
+  }
+}
