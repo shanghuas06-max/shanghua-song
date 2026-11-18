@@ -268,10 +268,9 @@ export const HistoryBackupManager: React.FC<HistoryBackupManagerProps> = ({
                           </button>
                           <button
                             type="button"
-                            disabled={orders.length <= 1}
                             onClick={() => onDeleteOrder(ord.id)}
                             aria-label={`Delete order ${ord.invoiceNo}`}
-                            className="p-1.5 text-slate-400 hover:text-red-600 disabled:opacity-30 rounded"
+                            className="p-1.5 text-slate-400 hover:text-red-600 rounded"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

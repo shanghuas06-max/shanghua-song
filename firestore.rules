@@ -8,7 +8,7 @@ service cloud.firestore {
 
     // Reusable Hardened Primitives
     function isValidId(id) {
-      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     function incoming() {
@@ -27,10 +27,6 @@ service cloud.firestore {
       return isSignedIn()
         && request.auth.token.email_verified == true
         && request.auth.uid == userId;
-    }
-
-    function hasParentUser(userId) {
-      return exists(/databases/$(database)/documents/users/$(userId));
     }
 
     function isNonNegNum(val) {
@@ -375,19 +371,17 @@ service cloud.firestore {
       allow delete: if false;
 
       match /customers/{customerId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(customerId)
-          && hasParentUser(userId)
           && isValidCustomer(incoming(), userId, customerId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(customerId)
-          && hasParentUser(userId)
           && isValidCustomer(incoming(), userId, customerId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -398,23 +392,21 @@ service cloud.firestore {
             'email', 'phone', 'defaultCurrency', 'defaultIncoterm',
             'notifyParty', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId);
       }
 
       match /suppliers/{supplierId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(supplierId)
-          && hasParentUser(userId)
           && isValidSupplier(incoming(), userId, supplierId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(supplierId)
-          && hasParentUser(userId)
           && isValidSupplier(incoming(), userId, supplierId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -425,23 +417,21 @@ service cloud.firestore {
             'email', 'phone', 'taxOrExporterId', 'signatoryName',
             'signatoryTitle', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId);
       }
 
       match /logisticsProviders/{providerId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(providerId)
-          && hasParentUser(userId)
           && isValidLogistics(incoming(), userId, providerId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(providerId)
-          && hasParentUser(userId)
           && isValidLogistics(incoming(), userId, providerId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -451,23 +441,21 @@ service cloud.firestore {
             'code', 'name', 'supportedModes', 'contactName',
             'phone', 'email', 'accountNo', 'defaultPortOrHub', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId);
       }
 
       match /bankAccounts/{bankId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(bankId)
-          && hasParentUser(userId)
           && isValidBankAccount(incoming(), userId, bankId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(bankId)
-          && hasParentUser(userId)
           && isValidBankAccount(incoming(), userId, bankId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -477,23 +465,21 @@ service cloud.firestore {
             'label', 'bankName', 'branchName', 'swiftCode',
             'accountName', 'accountNumber', 'currency', 'bankAddress', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId);
       }
 
       match /products/{productId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(productId)
-          && hasParentUser(userId)
           && isValidProduct(incoming(), userId, productId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(productId)
-          && hasParentUser(userId)
           && isValidProduct(incoming(), userId, productId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -505,23 +491,21 @@ service cloud.firestore {
             'defaultUnitsPerCarton', 'cartonLengthCm', 'cartonWidthCm',
             'cartonHeightCm', 'originCountry', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId);
       }
 
       match /orders/{orderId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(orderId)
-          && hasParentUser(userId)
           && isValidOrder(incoming(), userId, orderId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(orderId)
-          && hasParentUser(userId)
           && isValidOrder(incoming(), userId, orderId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -532,21 +516,20 @@ service cloud.firestore {
             'supplierId', 'customerId', 'bankAccountId', 'items',
             'shipping', 'costs', 'remarks', 'orderCreatedAt', 'orderUpdatedAt', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId);
       }
 
       match /auditLogs/{logId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(logId)
-          && hasParentUser(userId)
           && isValidAuditLog(incoming(), userId, logId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if false;
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId);
       }
     }
   }

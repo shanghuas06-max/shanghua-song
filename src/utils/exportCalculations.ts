@@ -1,6 +1,7 @@
 import type {
   CurrencyCode,
   ErpDataPayload,
+  ExportOrder,
   IncotermCode,
   OrderCosts,
   OrderItem,
@@ -312,4 +313,12 @@ export function validateErpBackupPayload(raw: unknown): raw is ErpDataPayload {
   if (!Array.isArray(obj.products)) return false;
   if (!Array.isArray(obj.orders)) return false;
   return true;
+}
+
+export function resolveActiveOrder(
+  orders: ExportOrder[],
+  activeOrderId: string,
+): ExportOrder | undefined {
+  if (!Array.isArray(orders) || orders.length === 0) return undefined;
+  return orders.find((o) => o.id === activeOrderId) ?? orders[0];
 }

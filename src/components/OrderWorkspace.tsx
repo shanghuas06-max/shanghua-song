@@ -31,7 +31,7 @@ import {
 } from '../utils/exportCalculations';
 
 interface OrderWorkspaceProps {
-  order: ExportOrder;
+  order: ExportOrder | undefined;
   customers: Customer[];
   suppliers: Supplier[];
   logisticsProviders: LogisticsProvider[];
@@ -41,8 +41,20 @@ interface OrderWorkspaceProps {
   onCreateNewOrder: () => void;
   onDuplicateOrder: () => void;
   onOpenDocuments: () => void;
+  onOpenHistory?: () => void;
   t: UiDictionary;
 }
+
+const DEFAULT_EMPTY_COSTS: ExportOrder['costs'] = {
+  packingHandlingCost: 0,
+  inlandFreightCost: 0,
+  mainFreightCost: 0,
+  insuranceMode: 'MANUAL',
+  insuranceManualCost: 0,
+  insuranceRatePercent: 0.5,
+  destinationHandlingCost: 0,
+  importDutyTaxCost: 0,
+};
 
 const INCOTERMS: IncotermCode[] = [
   'EXW',
@@ -70,32 +82,100 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
   onCreateNewOrder,
   onDuplicateOrder,
   onOpenDocuments,
+  onOpenHistory,
   t,
 }) => {
   const [selectedProductId, setSelectedProductId] = useState<string>(
     products[0]?.id ?? '',
   );
 
+  const effectiveSelectedProductId = products.some(
+    (p) => p.id === selectedProductId,
+  )
+    ? selectedProductId
+    : (products[0]?.id ?? '');
+
   const summary = useMemo(
     () =>
       calculateOrderSummary(
-        order.items,
-        order.costs,
-        order.shipping.incoterm,
-        order.currency,
+        order?.items ?? [],
+        order?.costs ?? DEFAULT_EMPTY_COSTS,
+        order?.shipping.incoterm ?? 'FOB',
+        order?.currency ?? 'USD',
       ),
-    [order.items, order.costs, order.shipping.incoterm, order.currency],
+    [order?.items, order?.costs, order?.shipping.incoterm, order?.currency],
   );
+
+  const activeMode = order?.shipping.mode ?? 'SEA';
 
   const matchingProviders = useMemo(() => {
     const preferred = logisticsProviders.filter((lp) =>
-      lp.supportedModes.includes(order.shipping.mode),
+      lp.supportedModes.includes(activeMode),
     );
     const others = logisticsProviders.filter(
-      (lp) => !lp.supportedModes.includes(order.shipping.mode),
+      (lp) => !lp.supportedModes.includes(activeMode),
     );
     return [...preferred, ...others];
-  }, [logisticsProviders, order.shipping.mode]);
+  }, [logisticsProviders, activeMode]);
+
+  if (!order) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              {t.orderSectionTitle}
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">{t.orderPartiesTitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onCreateNewOrder}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 transition-colors whitespace-nowrap"
+          >
+            <FilePlus2 className="w-3.5 h-3.5" />
+            <span>{t.btnNewOrder}</span>
+          </button>
+        </div>
+
+        <section
+          data-testid="empty-order-state"
+          className="bg-white border border-dashed border-slate-300 rounded-lg px-6 py-14 text-center max-w-2xl mx-auto space-y-4"
+        >
+          <div className="w-11 h-11 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
+            <FilePlus2 className="w-5 h-5" />
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="text-base font-bold text-slate-900">
+              {t.emptyOrdersWorkspaceTitle}
+            </h2>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              {t.emptyOrdersWorkspaceDesc}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+            <button
+              type="button"
+              onClick={onCreateNewOrder}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 transition-colors"
+            >
+              <FilePlus2 className="w-3.5 h-3.5" />
+              <span>{t.btnNewOrder}</span>
+            </button>
+            {onOpenHistory && (
+              <button
+                type="button"
+                onClick={onOpenHistory}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+              >
+                <span>{t.navHistory}</span>
+              </button>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const updateOrder = (patch: Partial<ExportOrder>) => {
     onChangeOrder({
@@ -170,7 +250,8 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
   };
 
   const handleAddProduct = () => {
-    const prod = products.find((p) => p.id === selectedProductId) ?? products[0];
+    const prod =
+      products.find((p) => p.id === effectiveSelectedProductId) ?? products[0];
     if (!prod) return;
     const defaultQty = prod.defaultUnitsPerCarton || 100;
     const newItem: OrderItem = {
@@ -486,7 +567,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
             </label>
             <select
               id="catalog-product-pick"
-              value={selectedProductId}
+              value={effectiveSelectedProductId}
               onChange={(e) => setSelectedProductId(e.target.value)}
               className="h-9 px-3 text-xs bg-white border border-slate-300 rounded-md max-w-[260px]"
             >

@@ -192,6 +192,9 @@ export interface UiDictionary {
   authErrMissingFields: string;
   authErrProviderDisabled: string;
   authErrGeneric: string;
+  emptyOrdersWorkspaceTitle: string;
+  emptyOrdersWorkspaceDesc: string;
+  emptyDocWorkspaceDesc: string;
 }
 
 export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
@@ -392,6 +395,9 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     authErrMissingFields: '请完整填写邮箱与密码后再提交。',
     authErrProviderDisabled: '当前 Firebase 项目尚未开启「电子邮件/密码」登录方式，请在 Firebase 控制台 Authentication -> Sign-in method 中启用，或先使用 Google 快捷登录。',
     authErrGeneric: '登录验证失败，请稍后重试。',
+    emptyOrdersWorkspaceTitle: '暂无出口订单',
+    emptyOrdersWorkspaceDesc: '暂无订单，请点击右上角「新建订单」按钮创建第一笔出口订单，或前往「历史记录与备份」恢复已有数据。',
+    emptyDocWorkspaceDesc: '暂无订单，请先点击右上角「新建订单」创建订单后再生成商业发票、装箱单与箱唛。',
   },
   ja: {
     brandTitle: 'HARDLOCK ERP',
@@ -590,6 +596,9 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     authErrMissingFields: 'メールアドレスとパスワードを入力してください。',
     authErrProviderDisabled: 'Firebaseコンソールで「メール/パスワード」認証が有効になっていません。設定を有効にするか、Googleログインをご利用ください。',
     authErrGeneric: '認証エラーが発生しました。もう一度お試しください。',
+    emptyOrdersWorkspaceTitle: '受注データがありません',
+    emptyOrdersWorkspaceDesc: '受注データがありません。右上の「新規受注作成」ボタンから最初の輸出受注を作成するか、「履歴・バックアップ復元」からデータを復元してください。',
+    emptyDocWorkspaceDesc: '輸出書類を作成できる受注データがありません。右上の「新規受注作成」から受注を作成してください。',
   },
   en: {
     brandTitle: 'HARDLOCK ERP',
@@ -788,5 +797,8 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     authErrMissingFields: 'Please enter both email and password.',
     authErrProviderDisabled: 'Email/Password sign-in is not yet enabled in Firebase Console (Authentication -> Sign-in method). Enable it or sign in with Google.',
     authErrGeneric: 'Authentication failed. Please try again.',
+    emptyOrdersWorkspaceTitle: 'No Export Orders Yet',
+    emptyOrdersWorkspaceDesc: 'No orders found. Click "New Order" in the top-right bar to create your first export order, or restore a backup from History & Backup.',
+    emptyDocWorkspaceDesc: 'No active order available. Click "New Order" in the top-right bar before generating commercial invoices, packing lists, or case marks.',
   },
 };

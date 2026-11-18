@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { onIdTokenChanged, signOut, type User } from 'firebase/auth';
 import { Loader2 } from 'lucide-react';
 import { auth } from './firebase';
 import { createInitialErpState } from './data/seedData';
@@ -29,7 +29,11 @@ import {
   saveSnapshotsForUser,
   triggerJsonBackupDownload,
 } from './utils/storage';
-import { calculateOrderSummary, formatMoney } from './utils/exportCalculations';
+import {
+  calculateOrderSummary,
+  formatMoney,
+  resolveActiveOrder,
+} from './utils/exportCalculations';
 import { AuthScreen } from './components/AuthScreen';
 import { SidebarNav } from './components/SidebarNav';
 import { TopHeader } from './components/TopHeader';
@@ -61,6 +65,7 @@ export default function App() {
   const [preAuthLang, setPreAuthLang] = useState<UiLanguage>(() => loadPreAuthLang());
   const [authReady, setAuthReady] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
+  const [, setAuthVersion] = useState(0);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [fatalError, setFatalError] = useState<Error | null>(null);
 
@@ -91,10 +96,11 @@ export default function App() {
   const effectiveUiLang = authUser?.emailVerified ? state.uiLang : preAuthLang;
   const t = UI_TEXT[effectiveUiLang];
 
-  // 1. Track Firebase Auth state
+  // 1. Track Firebase Auth & ID token state (captures emailVerified reloads too)
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
+    const unsub = onIdTokenChanged(auth, (user) => {
       setAuthUser(user);
+      setAuthVersion((v) => v + 1);
       setAuthReady(true);
     });
     return () => unsub();
@@ -176,7 +182,7 @@ export default function App() {
       dirtyOrderIdsRef.current.clear();
       unsubFirestore?.();
     };
-  }, [authReady, authUser, authUser?.uid, authUser?.emailVerified]);
+  }, [authReady, authUser?.uid, authUser?.emailVerified]);
 
   useEffect(() => {
     if (!saveFeedback) return;
@@ -198,11 +204,11 @@ export default function App() {
     await auth.currentUser.reload();
     await auth.currentUser.getIdToken(true);
     setAuthUser(auth.currentUser);
+    setAuthVersion((v) => v + 1);
   };
 
   const activeOrder = useMemo(
-    () =>
-      state.orders.find((o) => o.id === state.activeOrderId) ?? state.orders[0],
+    () => resolveActiveOrder(state.orders, state.activeOrderId),
     [state.orders, state.activeOrderId],
   );
 
@@ -575,7 +581,7 @@ export default function App() {
 
   // History & Backup handlers
   const handleDeleteOrder = (orderId: string) => {
-    if (!uid || state.orders.length <= 1) return;
+    if (!uid) return;
     const target = state.orders.find((o) => o.id === orderId);
     const remaining = state.orders.filter((o) => o.id !== orderId);
     const nextActive =
@@ -746,7 +752,9 @@ export default function App() {
         <TopHeader
           activeSection={activeSection}
           activeInvoiceNo={activeOrder?.invoiceNo ?? ''}
+          hasActiveOrder={Boolean(activeOrder)}
           onOpenMobileNav={() => setMobileNavOpen(true)}
+          onCreateNewOrder={handleCreateNewOrder}
           onSaveOrder={handleExplicitSaveOrder}
           onGoToPrint={handleHeaderPrintAction}
           t={t}
@@ -754,7 +762,7 @@ export default function App() {
         />
 
         <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] w-full mx-auto">
-          {activeSection === 'order' && activeOrder && (
+          {activeSection === 'order' && (
             <OrderWorkspace
               order={activeOrder}
               customers={state.customers}
@@ -766,11 +774,12 @@ export default function App() {
               onCreateNewOrder={handleCreateNewOrder}
               onDuplicateOrder={handleDuplicateOrder}
               onOpenDocuments={() => setActiveSection('documents')}
+              onOpenHistory={() => setActiveSection('history')}
               t={t}
             />
           )}
 
-          {activeSection === 'documents' && activeOrder && (
+          {activeSection === 'documents' && (
             <DocumentGenerator
               order={activeOrder}
               customer={activeCustomer}
@@ -779,6 +788,7 @@ export default function App() {
               logistics={activeLogistics}
               docLang={state.docLang}
               onChangeDocLang={handleChangeDocLang}
+              onCreateNewOrder={handleCreateNewOrder}
               t={t}
             />
           )}

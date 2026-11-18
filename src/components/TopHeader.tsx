@@ -1,12 +1,14 @@
 import React from 'react';
-import { Menu, Printer, Save } from 'lucide-react';
+import { FilePlus2, Menu, Printer, Save } from 'lucide-react';
 import type { NavSection } from '../types/erp';
 import type { UiDictionary } from '../i18n/uiTranslations';
 
 interface TopHeaderProps {
   activeSection: NavSection;
   activeInvoiceNo: string;
+  hasActiveOrder: boolean;
   onOpenMobileNav: () => void;
+  onCreateNewOrder: () => void;
   onSaveOrder: () => void;
   onGoToPrint: () => void;
   t: UiDictionary;
@@ -16,7 +18,9 @@ interface TopHeaderProps {
 export const TopHeader: React.FC<TopHeaderProps> = ({
   activeSection,
   activeInvoiceNo,
+  hasActiveOrder,
   onOpenMobileNav,
+  onCreateNewOrder,
   onSaveOrder,
   onGoToPrint,
   t,
@@ -30,7 +34,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   };
 
   return (
-    <header className="no-print sticky top-0 z-30 bg-white border-b border-slate-200 px-3 sm:px-4 lg:px-8 h-14 flex items-center justify-between gap-3 sm:gap-6">
+    <header className="no-print sticky top-0 z-30 bg-white border-b border-slate-200 px-3 sm:px-4 lg:px-8 h-14 flex items-center justify-between gap-2 sm:gap-4">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
         <button
           type="button"
@@ -65,8 +69,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
       </div>
 
-      {/* Primary Actions (Max 2 concise buttons per Top Bar Contract) */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+      {/* Persistent Top-Right Actions (New Order always visible even with 0 orders) */}
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         {saveFeedback && (
           <span
             role="status"
@@ -77,19 +81,37 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         )}
         <button
           type="button"
-          onClick={onSaveOrder}
-          className="inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+          onClick={onCreateNewOrder}
+          className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            hasActiveOrder
+              ? 'text-slate-700 bg-white border border-slate-300 hover:bg-slate-50'
+              : 'text-white bg-blue-700 hover:bg-blue-800'
+          }`}
         >
-          <Save className="w-3.5 h-3.5 shrink-0" />
-          <span>{t.btnSaveOrder}</span>
+          <FilePlus2 className="w-3.5 h-3.5 shrink-0" />
+          <span>{t.btnNewOrder}</span>
         </button>
         <button
           type="button"
+          disabled={!hasActiveOrder}
+          onClick={onSaveOrder}
+          className="inline-flex items-center gap-1.5 px-2 sm:px-3.5 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-45 disabled:pointer-events-none transition-colors whitespace-nowrap shrink-0"
+        >
+          <Save className="w-3.5 h-3.5 shrink-0" />
+          <span className="hidden sm:inline">{t.btnSaveOrder}</span>
+        </button>
+        <button
+          type="button"
+          disabled={!hasActiveOrder}
           onClick={onGoToPrint}
-          className="inline-flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0"
+          className={`inline-flex items-center gap-1.5 px-2 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold rounded-md disabled:opacity-45 disabled:pointer-events-none transition-colors whitespace-nowrap shrink-0 ${
+            hasActiveOrder
+              ? 'text-white bg-blue-700 hover:bg-blue-800'
+              : 'text-slate-600 bg-slate-100 border border-slate-200'
+          }`}
         >
           <Printer className="w-3.5 h-3.5 shrink-0" />
-          <span>{t.btnPrintDoc}</span>
+          <span className="hidden sm:inline">{t.btnPrintDoc}</span>
         </button>
       </div>
     </header>

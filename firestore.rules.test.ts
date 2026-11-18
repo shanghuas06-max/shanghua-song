@@ -71,6 +71,8 @@ test('firestore.rules includes default-deny catch-all, email_verified gate, and 
 
   assert.match(content, /match \/\{document=\*\*\}\s*\{\s*allow read, write: if false;\s*\}/);
   assert.match(content, /request\.auth\.token\.email_verified == true/);
+  assert.match(content, /id\.matches\('\^\[a-zA-Z0-9_-\]\+\$'\)/);
+  assert.doesNotMatch(content, /hasParentUser/);
   for (const col of [
     'customers',
     'suppliers',
@@ -82,4 +84,55 @@ test('firestore.rules includes default-deny catch-all, email_verified gate, and 
   ]) {
     assert.match(content, new RegExp(`match /${col}/\\{`), `Missing rules for ${col}`);
   }
+});
+
+test('Empty-master new order payload satisfies all firestore.rules order keys and ID rules', () => {
+  const newOrderPayload = sanitizeOrderPayload(
+    {
+      id: 'ord-1794974911865',
+      invoiceNo: 'HL-INV-2026-1110',
+      poNo: 'PO-1110',
+      orderDate: '2026-11-17',
+      paymentTerms: 'T/T IN ADVANCE',
+      currency: 'USD',
+      supplierId: '',
+      customerId: '',
+      bankAccountId: '',
+      items: [],
+      shipping: {
+        mode: 'SEA',
+        logisticsProviderId: '',
+        incoterm: 'FOB',
+        incotermPlace: 'OSAKA',
+        portOfLoading: 'OSAKA PORT, JAPAN',
+        portOfDischarge: '',
+        vesselOrFlightOrCourier: '',
+        trackingOrBlNo: '',
+        etd: '2026-11-17',
+        eta: '2026-11-17',
+        shippingMarksMain: 'HARDLOCK',
+        caseNumberPrefix: 'HL',
+      },
+      costs: {
+        packingHandlingCost: 0,
+        inlandFreightCost: 0,
+        mainFreightCost: 0,
+        insuranceMode: 'MANUAL',
+        insuranceManualCost: 0,
+        insuranceRatePercent: 0.5,
+        destinationHandlingCost: 0,
+        importDutyTaxCost: 0,
+      },
+      remarks: '',
+      createdAt: '2026-11-17T08:00:00.000Z',
+      updatedAt: '2026-11-17T08:00:00.000Z',
+    },
+    'lR7l5ycBWuN33sMDB5ZWKuuof7n1',
+  );
+
+  assert.equal(isValidFirestoreId(newOrderPayload.id), true);
+  assert.equal(isValidFirestoreId(newOrderPayload.ownerId), true);
+  assert.equal(Object.keys(newOrderPayload).length, 16); // + createdAt & updatedAt serverTimestamp = 18
+  assert.equal(Object.keys(newOrderPayload.shipping).length, 12);
+  assert.equal(Object.keys(newOrderPayload.costs).length, 8);
 });

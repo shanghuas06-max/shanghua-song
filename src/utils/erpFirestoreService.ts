@@ -14,7 +14,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { createInitialErpState } from '../data/seedData';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import type {
   AuditLogEntry,
   BankAccount,
@@ -74,11 +74,21 @@ function userSubColQuery(uid: string, sub: string) {
   return query(collection(db, 'users', uid, sub), where('ownerId', '==', uid));
 }
 
+const initInFlightByUid = new Map<string, Promise<boolean>>();
+
 async function seedCollectionsForUser(
   uid: string,
   payload: ErpDataPayload,
+  profileDocData?: Record<string, unknown>,
 ): Promise<void> {
   const ops: { ref: ReturnType<typeof userSubDocRef>; data: Record<string, unknown> }[] = [];
+
+  if (profileDocData) {
+    ops.push({
+      ref: userDocRef(uid),
+      data: profileDocData,
+    });
+  }
 
   for (const c of payload.customers) {
     const clean = sanitizeCustomerPayload(c, uid);
@@ -144,36 +154,47 @@ export async function ensureUserWorkspaceInitialized(
   user: User,
   preferredUiLang: UiLanguage = 'zh',
 ): Promise<boolean> {
-  const path = `users/${user.uid}`;
-  try {
-    const snap = await getDoc(userDocRef(user.uid));
-    if (snap.exists()) {
-      return false;
-    }
-
-    const seed = createInitialErpState();
-    // 1. Create parent user document first so Master Gate exists(users/uid) passes
-    await setDoc(userDocRef(user.uid), {
-      uid: user.uid,
-      email: clampStr(user.email ?? `${user.uid}@local`, BLUEPRINT_LIMITS.MEDIUM_MAX),
-      displayName: clampStr(
-        user.displayName ?? user.email?.split('@')[0] ?? 'Operator',
-        BLUEPRINT_LIMITS.MEDIUM_MAX,
-      ),
-      companyName: 'HARDLOCK Export Workspace',
-      uiLang: clampUiLang(preferredUiLang, 'zh'),
-      docLang: clampDocLang(seed.docLang, 'en'),
-      activeOrderId: clampStr(seed.activeOrderId, BLUEPRINT_LIMITS.ID_MAX),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    // 2. Seed isolated initial data under /users/{uid}/...
-    await seedCollectionsForUser(user.uid, seed);
-    return true;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
+  const existingPromise = initInFlightByUid.get(user.uid);
+  if (existingPromise) {
+    return existingPromise;
   }
+
+  const path = `users/${user.uid}`;
+  const run = (async () => {
+    try {
+      const snap = await getDoc(userDocRef(user.uid));
+      if (snap.exists()) {
+        return false;
+      }
+
+      const seed = createInitialErpState();
+      const profileDoc = {
+        uid: user.uid,
+        email: clampStr(user.email ?? `${user.uid}@local`, BLUEPRINT_LIMITS.MEDIUM_MAX),
+        displayName: clampStr(
+          user.displayName ?? user.email?.split('@')[0] ?? 'Operator',
+          BLUEPRINT_LIMITS.MEDIUM_MAX,
+        ),
+        companyName: 'HARDLOCK Export Workspace',
+        uiLang: clampUiLang(preferredUiLang, 'zh'),
+        docLang: clampDocLang(seed.docLang, 'en'),
+        activeOrderId: clampStr(seed.activeOrderId, BLUEPRINT_LIMITS.ID_MAX),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      // Atomically seed user workspace profile and initial collections
+      await seedCollectionsForUser(user.uid, seed, profileDoc);
+      return true;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    } finally {
+      initInFlightByUid.delete(user.uid);
+    }
+  })();
+
+  initInFlightByUid.set(user.uid, run);
+  return run;
 }
 
 export function subscribeUserWorkspace(
@@ -329,6 +350,15 @@ export function subscribeUserWorkspace(
   };
 }
 
+function isFirestoreNotFound(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code: unknown }).code === 'not-found'
+  );
+}
+
 export async function updateWorkspacePrefs(
   uid: string,
   prefs: { uiLang?: UiLanguage; docLang?: DocLanguage; activeOrderId?: string },
@@ -341,7 +371,29 @@ export async function updateWorkspacePrefs(
     if (prefs.activeOrderId !== undefined) {
       updatePayload.activeOrderId = clampStr(prefs.activeOrderId, BLUEPRINT_LIMITS.ID_MAX);
     }
-    await updateDoc(userDocRef(uid), updatePayload);
+    try {
+      await updateDoc(userDocRef(uid), updatePayload);
+    } catch (updateErr) {
+      if (!isFirestoreNotFound(updateErr)) throw updateErr;
+      const currentUser = auth.currentUser;
+      await setDoc(userDocRef(uid), {
+        uid,
+        email: clampStr(
+          currentUser?.email ?? `${uid}@local`,
+          BLUEPRINT_LIMITS.MEDIUM_MAX,
+        ),
+        displayName: clampStr(
+          currentUser?.displayName ?? currentUser?.email?.split('@')[0] ?? 'Operator',
+          BLUEPRINT_LIMITS.MEDIUM_MAX,
+        ),
+        companyName: 'HARDLOCK Export Workspace',
+        uiLang: clampUiLang(prefs.uiLang, 'zh'),
+        docLang: clampDocLang(prefs.docLang, 'en'),
+        activeOrderId: clampStr(prefs.activeOrderId ?? '', BLUEPRINT_LIMITS.ID_MAX),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
   }
@@ -359,14 +411,18 @@ async function upsertSubDoc(
     const ref = userSubDocRef(uid, sub, id);
     if (existsInMemory) {
       const { id: _i, ownerId: _o, ...mutableFields } = cleanPayload;
-      await updateDoc(ref, { ...mutableFields, updatedAt: serverTimestamp() });
-    } else {
-      await setDoc(ref, {
-        ...cleanPayload,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      try {
+        await updateDoc(ref, { ...mutableFields, updatedAt: serverTimestamp() });
+        return;
+      } catch (updateErr) {
+        if (!isFirestoreNotFound(updateErr)) throw updateErr;
+      }
     }
+    await setDoc(ref, {
+      ...cleanPayload,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
   }
@@ -475,10 +531,7 @@ export const cloudErpOps = {
       // Write restored/reset payload
       await seedCollectionsForUser(uid, payload);
 
-      await updateDoc(userDocRef(uid), {
-        activeOrderId: clampStr(activeOrderId, BLUEPRINT_LIMITS.ID_MAX),
-        updatedAt: serverTimestamp(),
-      });
+      await updateWorkspacePrefs(uid, { activeOrderId });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
     }
