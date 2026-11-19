@@ -10,11 +10,13 @@ import type {
   LogisticsProvider,
   OrderItem,
   PackingListRow,
+  PriceTier,
   Product,
   Supplier,
   TransportMode,
   UiLanguage,
 } from '../types/erp';
+import { resolveEffectiveExchangeRate } from './exportCalculations';
 
 export const BLUEPRINT_LIMITS = {
   ID_MAX: 128,
@@ -31,6 +33,7 @@ export const BLUEPRINT_LIMITS = {
   MAX_PACKING_ROWS: 100,
   MAX_MODES: 4,
   MAX_CUSTOM_PRICES: 100,
+  MAX_PRICE_TIERS: 20,
 } as const;
 
 const VALID_CURRENCIES: CurrencyCode[] = ['USD', 'JPY', 'EUR', 'CNY'];
@@ -85,7 +88,7 @@ export function nonNegNum(val: unknown, fallback = 0): number {
   return num;
 }
 
-export function clampCurrency(val: unknown, fallback: CurrencyCode = 'USD'): CurrencyCode {
+export function clampCurrency(val: unknown, fallback: CurrencyCode = 'JPY'): CurrencyCode {
   return VALID_CURRENCIES.includes(val as CurrencyCode) ? (val as CurrencyCode) : fallback;
 }
 
@@ -105,23 +108,47 @@ export function clampDocLang(val: unknown, fallback: DocLanguage = 'en'): DocLan
   return VALID_DOC_LANGS.includes(val as DocLanguage) ? (val as DocLanguage) : fallback;
 }
 
+export function sanitizePriceTiers(tiers: unknown): PriceTier[] {
+  if (!Array.isArray(tiers)) return [];
+  const cleaned: PriceTier[] = [];
+  for (const t of tiers) {
+    if (!t || typeof t !== 'object') continue;
+    const rawMin = nonNegNum((t as { minQty?: unknown }).minQty, 0);
+    const minQty = Math.max(1, Math.round(rawMin));
+    const rawMax = (t as { maxQty?: unknown }).maxQty;
+    let maxQty: number | null = null;
+    if (rawMax !== null && rawMax !== undefined && rawMax !== '') {
+      const parsedMax = Math.round(nonNegNum(rawMax, minQty));
+      maxQty = Math.max(minQty, parsedMax);
+    }
+    const unitPrice = nonNegNum((t as { unitPrice?: unknown }).unitPrice, 0);
+    cleaned.push({ minQty, maxQty, unitPrice });
+    if (cleaned.length >= BLUEPRINT_LIMITS.MAX_PRICE_TIERS) break;
+  }
+  return cleaned.sort((a, b) => a.minQty - b.minQty);
+}
+
 export function sanitizeCustomerCustomPrices(
   prices: unknown,
 ): CustomerProductPrice[] {
   if (!Array.isArray(prices)) return [];
-  const deduped = new Map<string, number>();
+  const deduped = new Map<string, CustomerProductPrice>();
   for (const entry of prices) {
     if (!entry || typeof entry !== 'object') continue;
     const rawId = (entry as { productId?: unknown }).productId;
     if (!isValidFirestoreId(rawId)) continue;
     const price = nonNegNum((entry as { unitPrice?: unknown }).unitPrice, 0);
-    deduped.set(rawId, price);
+    const tieredPrices = sanitizePriceTiers(
+      (entry as { tieredPrices?: unknown }).tieredPrices,
+    );
+    deduped.set(rawId, {
+      productId: rawId,
+      unitPrice: price,
+      tieredPrices,
+    });
     if (deduped.size >= BLUEPRINT_LIMITS.MAX_CUSTOM_PRICES) break;
   }
-  return Array.from(deduped.entries()).map(([productId, unitPrice]) => ({
-    productId,
-    unitPrice,
-  }));
+  return Array.from(deduped.values());
 }
 
 export function sanitizeCustomerPayload(c: Customer, ownerId: string) {
@@ -135,7 +162,9 @@ export function sanitizeCustomerPayload(c: Customer, ownerId: string) {
     contactName: clampStr(c.contactName, BLUEPRINT_LIMITS.MEDIUM_MAX),
     email: clampStr(c.email, BLUEPRINT_LIMITS.MEDIUM_MAX),
     phone: clampStr(c.phone, BLUEPRINT_LIMITS.MEDIUM_MAX),
-    defaultCurrency: clampCurrency(c.defaultCurrency),
+    fax: clampStr(c.fax, BLUEPRINT_LIMITS.MEDIUM_MAX),
+    taxOrImporterId: clampStr(c.taxOrImporterId, 100),
+    defaultCurrency: clampCurrency(c.defaultCurrency, 'USD'),
     defaultIncoterm: clampIncoterm(c.defaultIncoterm),
     notifyParty: clampStr(c.notifyParty, BLUEPRINT_LIMITS.LONG_MAX),
     customPrices: sanitizeCustomerCustomPrices(c.customPrices),
@@ -191,7 +220,7 @@ export function sanitizeBankPayload(b: BankAccount, ownerId: string) {
     swiftCode: clampStr(b.swiftCode, BLUEPRINT_LIMITS.SHORT_MAX),
     accountName: clampStr(b.accountName, BLUEPRINT_LIMITS.MEDIUM_MAX),
     accountNumber: clampStr(b.accountNumber, BLUEPRINT_LIMITS.MEDIUM_MAX),
-    currency: clampCurrency(b.currency),
+    currency: clampCurrency(b.currency, 'USD'),
     bankAddress: clampStr(b.bankAddress, BLUEPRINT_LIMITS.LONG_MAX),
   };
 }
@@ -209,7 +238,8 @@ export function sanitizeProductPayload(p: Product, ownerId: string) {
     hsCode: clampStr(p.hsCode, BLUEPRINT_LIMITS.SHORT_MAX),
     unit: clampNonEmptyStr(p.unit, BLUEPRINT_LIMITS.UNIT_MAX, 'PCS'),
     unitPrice: nonNegNum(p.unitPrice, 0),
-    currency: clampCurrency(p.currency),
+    currency: clampCurrency(p.currency, 'JPY'),
+    tieredPrices: sanitizePriceTiers(p.tieredPrices),
     unitNetWeightKg: nonNegNum(p.unitNetWeightKg, 0),
     unitGrossWeightKg: nonNegNum(p.unitGrossWeightKg, 0),
     defaultUnitsPerCarton: Math.max(1, nonNegNum(p.defaultUnitsPerCarton, 1)),
@@ -233,6 +263,7 @@ export function sanitizeOrderItem(item: OrderItem, idx: number): OrderItem {
     quantity: nonNegNum(item.quantity, 0),
     unit: clampNonEmptyStr(item.unit, BLUEPRINT_LIMITS.UNIT_MAX, 'PCS'),
     unitPrice: nonNegNum(item.unitPrice, 0),
+    baseUnitPriceJpy: nonNegNum(item.baseUnitPriceJpy, 0),
     cartons: nonNegNum(item.cartons, 0),
     unitNetWeightKg: nonNegNum(item.unitNetWeightKg, 0),
     unitGrossWeightKg: nonNegNum(item.unitGrossWeightKg, 0),
@@ -272,6 +303,7 @@ export function sanitizeOrderPayload(o: ExportOrder, ownerId: string) {
   const safePackingRows = Array.isArray(o.packingRows)
     ? o.packingRows.slice(0, BLUEPRINT_LIMITS.MAX_PACKING_ROWS).map(sanitizePackingRow)
     : [];
+  const currency = clampCurrency(o.currency, 'USD');
 
   return {
     id: sanitizeId(o.id, 'ord'),
@@ -280,7 +312,8 @@ export function sanitizeOrderPayload(o: ExportOrder, ownerId: string) {
     poNo: clampStr(o.poNo, BLUEPRINT_LIMITS.INVOICE_MAX),
     orderDate: clampStr(o.orderDate, BLUEPRINT_LIMITS.DATE_MAX),
     paymentTerms: clampStr(o.paymentTerms, BLUEPRINT_LIMITS.MEDIUM_MAX),
-    currency: clampCurrency(o.currency),
+    currency,
+    exchangeRate: resolveEffectiveExchangeRate(currency, o.exchangeRate),
     supplierId: clampStr(o.supplierId, BLUEPRINT_LIMITS.ID_MAX),
     customerId: clampStr(o.customerId, BLUEPRINT_LIMITS.ID_MAX),
     billToCustomerId: clampStr(o.billToCustomerId, BLUEPRINT_LIMITS.ID_MAX),
@@ -288,6 +321,7 @@ export function sanitizeOrderPayload(o: ExportOrder, ownerId: string) {
     itemHeader: clampStr(o.itemHeader, BLUEPRINT_LIMITS.MEDIUM_MAX),
     palletCount: nonNegNum(o.palletCount, 0),
     emptyCartons: nonNegNum(o.emptyCartons, 0),
+    cartonsPerLayer: Math.max(1, Math.round(nonNegNum(o.cartonsPerLayer, 12))),
     palletVolumeDetails: clampStr(o.palletVolumeDetails, BLUEPRINT_LIMITS.LONG_MAX),
     surfaceFootnotes: clampStr(o.surfaceFootnotes, BLUEPRINT_LIMITS.LONG_MAX),
     packingRows: safePackingRows,

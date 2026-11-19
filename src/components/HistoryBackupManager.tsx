@@ -11,9 +11,13 @@ import {
 import type {
   AuditLogEntry,
   BackupSnapshot,
+  BankAccount,
   Customer,
+  DocLanguage,
   ErpDataPayload,
   ExportOrder,
+  Product,
+  Supplier,
 } from '../types/erp';
 import type { UiDictionary } from '../i18n/uiTranslations';
 import {
@@ -21,12 +25,19 @@ import {
   formatMoney,
   validateErpBackupPayload,
 } from '../utils/exportCalculations';
-import { exportOrdersToExcel } from '../utils/importExportUtils';
+import {
+  exportDocumentToExcel,
+  exportOrdersToExcel,
+} from '../utils/importExportUtils';
 
 interface HistoryBackupManagerProps {
   orders: ExportOrder[];
   activeOrderId: string;
   customers: Customer[];
+  suppliers?: Supplier[];
+  bankAccounts?: BankAccount[];
+  products?: Product[];
+  docLang?: DocLanguage;
   auditLogs: AuditLogEntry[];
   snapshots: BackupSnapshot[];
   onLoadOrder: (orderId: string) => void;
@@ -43,6 +54,10 @@ export const HistoryBackupManager: React.FC<HistoryBackupManagerProps> = ({
   orders,
   activeOrderId,
   customers,
+  suppliers = [],
+  bankAccounts = [],
+  products = [],
+  docLang = 'en',
   auditLogs,
   snapshots,
   onLoadOrder,
@@ -275,13 +290,29 @@ export const HistoryBackupManager: React.FC<HistoryBackupManagerProps> = ({
                         <td className="py-3 px-4 text-right whitespace-nowrap">
                           <button
                             type="button"
-                            onClick={() =>
-                              exportOrdersToExcel(
-                                [ord],
-                                customers,
-                                ord.invoiceNo || 'hardlock-order',
-                              )
-                            }
+                            onClick={() => {
+                              const shipTo = customers.find(
+                                (c) => c.id === ord.customerId,
+                              );
+                              const billTo =
+                                customers.find(
+                                  (c) => c.id === ord.billToCustomerId,
+                                ) ?? shipTo;
+                              const supplier = suppliers.find(
+                                (s) => s.id === ord.supplierId,
+                              );
+                              const bank = bankAccounts.find(
+                                (b) => b.id === ord.bankAccountId,
+                              );
+                              exportDocumentToExcel(ord, {
+                                customer: shipTo,
+                                billToCustomer: billTo,
+                                supplier,
+                                bank,
+                                products,
+                                docLang,
+                              });
+                            }}
                             aria-label={`${t.btnExportExcel} ${ord.invoiceNo}`}
                             className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded mr-1"
                           >

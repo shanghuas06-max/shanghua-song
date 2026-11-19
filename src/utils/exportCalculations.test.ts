@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  calculateItemCartons,
   calculateOrderSummary,
+  calculatePalletPacking,
   formatMoney,
+  getDefaultExchangeRate,
   getIncotermFlags,
+  resolveEffectiveExchangeRate,
   validateErpBackupPayload,
 } from './exportCalculations';
 import type { OrderCosts, OrderItem } from '../types/erp';
@@ -155,3 +159,42 @@ test('validateErpBackupPayload validates valid payloads and rejects invalid payl
   assert.equal(validateErpBackupPayload(null), false);
   assert.equal(validateErpBackupPayload({ version: 3 }), false);
 });
+
+test('calculateItemCartons and calculatePalletPacking enforce <=12 direct vs >12 palletized rules', () => {
+  assert.equal(calculateItemCartons(0, 800), 0);
+  assert.equal(calculateItemCartons(800, 800), 1);
+  assert.equal(calculateItemCartons(801, 800), 2);
+
+  // <= 12 cartons: no pallets, 0 empty cartons
+  const direct = calculatePalletPacking(12);
+  assert.equal(direct.usesPallet, false);
+  assert.equal(direct.palletCount, 0);
+  assert.equal(direct.emptyCartons, 0);
+
+  // 13 cartons: 1 pallet, 13 % 12 = 1 -> 11 empty cartons
+  const thirteen = calculatePalletPacking(13, { cartonsPerLayer: 12 });
+  assert.equal(thirteen.usesPallet, true);
+  assert.equal(thirteen.palletCount, 1);
+  assert.equal(thirteen.emptyCartons, 11);
+
+  // User invoice example: 569 cartons -> 10 pallets, 569 % 60 = 29, 29 % 12 = 5 -> 7 empty cartons
+  const invoiceSample = calculatePalletPacking(569, { cartonsPerLayer: 12 });
+  assert.equal(invoiceSample.usesPallet, true);
+  assert.equal(invoiceSample.palletCount, 10);
+  assert.equal(invoiceSample.lastPalletCartons, 29);
+  assert.equal(invoiceSample.emptyCartons, 7);
+
+  // Full pallet (60 cartons = 5 layers of 12) -> 0 empty cartons
+  const exactFull = calculatePalletPacking(60, { cartonsPerLayer: 12 });
+  assert.equal(exactFull.palletCount, 1);
+  assert.equal(exactFull.emptyCartons, 0);
+});
+
+test('exchange rate helpers return JPY=1 and valid fallback rates for foreign currencies', () => {
+  assert.equal(getDefaultExchangeRate('JPY'), 1);
+  assert.equal(getDefaultExchangeRate('USD'), 150);
+  assert.equal(resolveEffectiveExchangeRate('JPY', 150), 1);
+  assert.equal(resolveEffectiveExchangeRate('USD', 148.5), 148.5);
+  assert.equal(resolveEffectiveExchangeRate('CNY', 0), 21);
+});
+

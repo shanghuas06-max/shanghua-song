@@ -8,6 +8,101 @@ import type {
   TransportMode,
 } from '../types/erp';
 
+export const DEFAULT_EXCHANGE_RATES: Record<CurrencyCode, number> = {
+  JPY: 1,
+  USD: 150,
+  EUR: 162,
+  CNY: 21,
+};
+
+export function getDefaultExchangeRate(currency: CurrencyCode): number {
+  return DEFAULT_EXCHANGE_RATES[currency] ?? 1;
+}
+
+export function resolveEffectiveExchangeRate(
+  currency: CurrencyCode,
+  exchangeRate?: number,
+): number {
+  if (currency === 'JPY') return 1;
+  const num = Number(exchangeRate);
+  if (Number.isFinite(num) && num > 0) return num;
+  return getDefaultExchangeRate(currency);
+}
+
+export interface PalletPackingResult {
+  totalCartons: number;
+  usesPallet: boolean;
+  palletCount: number;
+  emptyCartons: number;
+  lastPalletCartons: number;
+  maxCartonsPerPallet: number;
+  cartonsPerLayer: number;
+  palletThreshold: number;
+}
+
+export function calculateItemCartons(
+  quantity: number,
+  unitsPerCarton: number,
+): number {
+  const safeQty = Math.max(0, Number(quantity) || 0);
+  if (safeQty <= 0) return 0;
+  const perCarton = Math.max(1, Math.round(Number(unitsPerCarton) || 1));
+  return Math.ceil(safeQty / perCarton);
+}
+
+export function calculatePalletPacking(
+  totalCartons: number,
+  options?: {
+    palletThreshold?: number;
+    maxCartonsPerPallet?: number;
+    cartonsPerLayer?: number;
+  },
+): PalletPackingResult {
+  const safeTotal = Math.max(0, Math.round(Number(totalCartons) || 0));
+  const palletThreshold = Math.max(0, Math.round(options?.palletThreshold ?? 12));
+  const maxCartonsPerPallet = Math.max(
+    1,
+    Math.round(options?.maxCartonsPerPallet ?? 60),
+  );
+  const cartonsPerLayer = Math.max(
+    1,
+    Math.round(options?.cartonsPerLayer ?? 12),
+  );
+
+  // <= 12 cartons: direct carton packaging without pallets
+  if (safeTotal <= palletThreshold) {
+    return {
+      totalCartons: safeTotal,
+      usesPallet: false,
+      palletCount: 0,
+      emptyCartons: 0,
+      lastPalletCartons: 0,
+      maxCartonsPerPallet,
+      cartonsPerLayer,
+      palletThreshold,
+    };
+  }
+
+  // > 12 cartons: palletized (max 60 cartons per pallet) + fill incomplete top layer with empty cartons
+  const palletCount = Math.ceil(safeTotal / maxCartonsPerPallet);
+  const mod = safeTotal % maxCartonsPerPallet;
+  const lastPalletCartons = mod === 0 ? maxCartonsPerPallet : mod;
+  const layerRemainder = lastPalletCartons % cartonsPerLayer;
+  const emptyCartons =
+    layerRemainder === 0 ? 0 : cartonsPerLayer - layerRemainder;
+
+  return {
+    totalCartons: safeTotal,
+    usesPallet: true,
+    palletCount,
+    emptyCartons,
+    lastPalletCartons,
+    maxCartonsPerPallet,
+    cartonsPerLayer,
+    palletThreshold,
+  };
+}
+
 export interface CalculatedLineItem {
   id: string;
   amount: number;
@@ -242,7 +337,6 @@ export function calculateOrderSummary(
   let insuranceCost = 0;
   if (costs.insuranceMode === 'AUTO_PERCENT') {
     const rate = Math.max(0, Number(costs.insuranceRatePercent) || 0);
-    // Standard marine/cargo insured value is 110% of (EXW + Inland + Main Freight)
     const insuredBase = (exwTotal + inlandFreightCost + mainFreightCost) * 1.1;
     insuranceCost = roundByCurrency((insuredBase * rate) / 100, currency);
   } else {

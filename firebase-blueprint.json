@@ -73,14 +73,16 @@
         "contactName": { "type": "string", "minLength": 0, "maxLength": 240 },
         "email": { "type": "string", "minLength": 0, "maxLength": 240 },
         "phone": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "fax": { "type": "string", "minLength": 0, "maxLength": 240 },
+        "taxOrImporterId": { "type": "string", "minLength": 0, "maxLength": 100 },
         "defaultCurrency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
         "defaultIncoterm": { "type": "string", "enum": ["EXW", "FCA", "FOB", "CFR", "CIF", "CPT", "CIP", "DAP", "DPU", "DDP"] },
         "notifyParty": { "type": "string", "minLength": 0, "maxLength": 1000 },
-        "customPrices": { "type": "array", "description": "Customer-specific product prices keyed by productId (max 100)." },
+        "customPrices": { "type": "array", "description": "Customer-specific product prices & optional quantity tiers keyed by productId (max 100)." },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "ownerId", "code", "name", "country", "address", "contactName", "email", "phone", "defaultCurrency", "defaultIncoterm", "notifyParty", "customPrices", "createdAt", "updatedAt"]
+      "required": ["id", "ownerId", "code", "name", "country", "address", "contactName", "email", "phone", "fax", "taxOrImporterId", "defaultCurrency", "defaultIncoterm", "notifyParty", "customPrices", "createdAt", "updatedAt"]
     },
     "SupplierRecord": {
       "title": "SupplierRecord",
@@ -162,6 +164,7 @@
         "unit": { "type": "string", "minLength": 1, "maxLength": 40 },
         "unitPrice": { "type": "number" },
         "currency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
+        "tieredPrices": { "type": "array", "description": "Optional quantity-based tiered unit prices in base product currency (max 20)." },
         "unitNetWeightKg": { "type": "number" },
         "unitGrossWeightKg": { "type": "number" },
         "defaultUnitsPerCarton": { "type": "number" },
@@ -172,7 +175,7 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "ownerId", "sku", "nameEn", "nameLocal", "size", "material", "surfaceFinish", "hsCode", "unit", "unitPrice", "currency", "unitNetWeightKg", "unitGrossWeightKg", "defaultUnitsPerCarton", "cartonLengthCm", "cartonWidthCm", "cartonHeightCm", "originCountry", "createdAt", "updatedAt"]
+      "required": ["id", "ownerId", "sku", "nameEn", "nameLocal", "size", "material", "surfaceFinish", "hsCode", "unit", "unitPrice", "currency", "tieredPrices", "unitNetWeightKg", "unitGrossWeightKg", "defaultUnitsPerCarton", "cartonLengthCm", "cartonWidthCm", "cartonHeightCm", "originCountry", "createdAt", "updatedAt"]
     },
     "OrderRecord": {
       "title": "OrderRecord",
@@ -186,6 +189,7 @@
         "orderDate": { "type": "string", "minLength": 0, "maxLength": 40 },
         "paymentTerms": { "type": "string", "minLength": 0, "maxLength": 240 },
         "currency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
+        "exchangeRate": { "type": "number", "description": "Conversion rate: 1 settlement currency = X JPY (1 when JPY)." },
         "supplierId": { "type": "string", "minLength": 0, "maxLength": 128 },
         "customerId": { "type": "string", "minLength": 0, "maxLength": 128 },
         "billToCustomerId": { "type": "string", "minLength": 0, "maxLength": 128 },
@@ -193,6 +197,7 @@
         "itemHeader": { "type": "string", "minLength": 0, "maxLength": 240 },
         "palletCount": { "type": "number" },
         "emptyCartons": { "type": "number" },
+        "cartonsPerLayer": { "type": "number", "description": "Cartons per pallet layer used to compute empty filler cartons (default 12)." },
         "palletVolumeDetails": { "type": "string", "minLength": 0, "maxLength": 1000 },
         "surfaceFootnotes": { "type": "string", "minLength": 0, "maxLength": 1000 },
         "packingRows": { "type": "array", "description": "Optional pallet-by-pallet packing list breakdown rows (max 100)." },
@@ -205,7 +210,7 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "ownerId", "invoiceNo", "poNo", "orderDate", "paymentTerms", "currency", "supplierId", "customerId", "billToCustomerId", "bankAccountId", "itemHeader", "palletCount", "emptyCartons", "palletVolumeDetails", "surfaceFootnotes", "packingRows", "items", "shipping", "costs", "remarks", "orderCreatedAt", "orderUpdatedAt", "createdAt", "updatedAt"]
+      "required": ["id", "ownerId", "invoiceNo", "poNo", "orderDate", "paymentTerms", "currency", "exchangeRate", "supplierId", "customerId", "billToCustomerId", "bankAccountId", "itemHeader", "palletCount", "emptyCartons", "cartonsPerLayer", "palletVolumeDetails", "surfaceFootnotes", "packingRows", "items", "shipping", "costs", "remarks", "orderCreatedAt", "orderUpdatedAt", "createdAt", "updatedAt"]
     },
     "AuditLogRecord": {
       "title": "AuditLogRecord",

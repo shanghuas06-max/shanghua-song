@@ -42,25 +42,37 @@ test('Dirty Dozen #7 & #8: Volumetric sanitizers enforce blueprint string and ar
 
 test('Sanitizers clamp customer, product, and logistics payloads cleanly', () => {
   const seed = createInitialErpState();
-  const customer = sanitizeCustomerPayload(
+  const sanitizedCustom = sanitizeCustomerPayload(
     {
       ...seed.customers[0],
       address: 'A'.repeat(1500),
       notifyParty: undefined,
+      fax: undefined,
+      taxOrImporterId: undefined,
       customPrices: [
         { productId: 'prod-1', unitPrice: 1.45 },
         { productId: '../bad', unitPrice: 99 },
-        { productId: 'prod-2', unitPrice: -5 },
+        {
+          productId: 'prod-2',
+          unitPrice: -5,
+          tieredPrices: [{ minQty: 500, maxQty: null, unitPrice: 88 }],
+        },
       ],
     },
     'uid-123',
   );
-  assert.equal(customer.address.length, BLUEPRINT_LIMITS.LONG_MAX);
-  assert.equal(customer.notifyParty, '');
-  assert.equal(customer.ownerId, 'uid-123');
-  assert.deepEqual(customer.customPrices, [
-    { productId: 'prod-1', unitPrice: 1.45 },
-    { productId: 'prod-2', unitPrice: 0 },
+  assert.equal(sanitizedCustom.address.length, BLUEPRINT_LIMITS.LONG_MAX);
+  assert.equal(sanitizedCustom.notifyParty, '');
+  assert.equal(sanitizedCustom.fax, '');
+  assert.equal(sanitizedCustom.taxOrImporterId, '');
+  assert.equal(sanitizedCustom.ownerId, 'uid-123');
+  assert.deepEqual(sanitizedCustom.customPrices, [
+    { productId: 'prod-1', unitPrice: 1.45, tieredPrices: [] },
+    {
+      productId: 'prod-2',
+      unitPrice: 0,
+      tieredPrices: [{ minQty: 500, maxQty: null, unitPrice: 88 }],
+    },
   ]);
 
   const defaultCustomer = sanitizeCustomerPayload(
@@ -76,11 +88,18 @@ test('Sanitizers clamp customer, product, and logistics payloads cleanly', () =>
   assert.deepEqual(logistics.supportedModes, ['SEA']);
 
   const product = sanitizeProductPayload(
-    { ...seed.products[0], unitPrice: -10, defaultUnitsPerCarton: 0 },
+    {
+      ...seed.products[0],
+      unitPrice: -10,
+      defaultUnitsPerCarton: 0,
+      tieredPrices: [{ minQty: 100, maxQty: 500, unitPrice: 400 }],
+    },
     'uid-123',
   );
   assert.equal(product.unitPrice, 0);
   assert.equal(product.defaultUnitsPerCarton, 1);
+  assert.equal(product.currency, 'JPY');
+  assert.equal(product.tieredPrices.length, 1);
 });
 
 test('firestore.rules includes default-deny catch-all, email_verified gate, and all blueprint collections', () => {
@@ -92,6 +111,10 @@ test('firestore.rules includes default-deny catch-all, email_verified gate, and 
   assert.match(content, /request\.auth\.token\.email_verified == true/);
   assert.match(content, /id\.matches\('\^\[a-zA-Z0-9_-\]\+\$'\)/);
   assert.doesNotMatch(content, /hasParentUser/);
+  assert.match(content, /taxOrImporterId/);
+  assert.match(content, /tieredPrices/);
+  assert.match(content, /exchangeRate/);
+  assert.match(content, /cartonsPerLayer/);
   for (const col of [
     'customers',
     'suppliers',
@@ -151,9 +174,11 @@ test('Empty-master new order payload satisfies all firestore.rules order keys an
 
   assert.equal(isValidFirestoreId(newOrderPayload.id), true);
   assert.equal(isValidFirestoreId(newOrderPayload.ownerId), true);
-  assert.equal(Object.keys(newOrderPayload).length, 23); // + createdAt & updatedAt serverTimestamp = 25
+  assert.equal(Object.keys(newOrderPayload).length, 25); // + createdAt & updatedAt serverTimestamp = 27
   assert.equal(Object.keys(newOrderPayload.shipping).length, 12);
   assert.equal(Object.keys(newOrderPayload.costs).length, 8);
+  assert.equal(newOrderPayload.exchangeRate, 150);
+  assert.equal(newOrderPayload.cartonsPerLayer, 12);
   assert.equal(newOrderPayload.billToCustomerId, '');
   assert.equal(newOrderPayload.itemHeader, '');
   assert.equal(newOrderPayload.palletCount, 0);

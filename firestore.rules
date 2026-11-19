@@ -75,14 +75,14 @@ service cloud.firestore {
     function isValidCustomer(data, userId, docId) {
       return data.keys().hasAll([
           'id', 'ownerId', 'code', 'name', 'country', 'address',
-          'contactName', 'email', 'phone', 'defaultCurrency',
-          'defaultIncoterm', 'notifyParty', 'customPrices',
+          'contactName', 'email', 'phone', 'fax', 'taxOrImporterId',
+          'defaultCurrency', 'defaultIncoterm', 'notifyParty', 'customPrices',
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'id', 'ownerId', 'code', 'name', 'country', 'address',
-          'contactName', 'email', 'phone', 'defaultCurrency',
-          'defaultIncoterm', 'notifyParty', 'customPrices',
+          'contactName', 'email', 'phone', 'fax', 'taxOrImporterId',
+          'defaultCurrency', 'defaultIncoterm', 'notifyParty', 'customPrices',
           'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
@@ -97,6 +97,8 @@ service cloud.firestore {
         && isStrLen(data.contactName, 0, 240)
         && isStrLen(data.email, 0, 240)
         && isStrLen(data.phone, 0, 240)
+        && isStrLen(data.fax, 0, 240)
+        && isStrLen(data.taxOrImporterId, 0, 100)
         && isValidCurrency(data.defaultCurrency)
         && isValidIncoterm(data.defaultIncoterm)
         && isStrLen(data.notifyParty, 0, 1000)
@@ -106,9 +108,15 @@ service cloud.firestore {
           data.customPrices.size() == 0 || (
             data.customPrices[0] is map
             && data.customPrices[0].keys().hasAll(['productId', 'unitPrice'])
-            && data.customPrices[0].keys().hasOnly(['productId', 'unitPrice'])
+            && data.customPrices[0].keys().hasOnly(['productId', 'unitPrice', 'tieredPrices'])
             && isValidId(data.customPrices[0].productId)
             && isNonNegNum(data.customPrices[0].unitPrice)
+            && (
+              !('tieredPrices' in data.customPrices[0]) || (
+                data.customPrices[0].tieredPrices is list
+                && data.customPrices[0].tieredPrices.size() <= 20
+              )
+            )
           )
         )
         && data.createdAt is timestamp
@@ -209,7 +217,7 @@ service cloud.firestore {
       return data.keys().hasAll([
           'id', 'ownerId', 'sku', 'nameEn', 'nameLocal',
           'size', 'material', 'surfaceFinish', 'hsCode',
-          'unit', 'unitPrice', 'currency', 'unitNetWeightKg',
+          'unit', 'unitPrice', 'currency', 'tieredPrices', 'unitNetWeightKg',
           'unitGrossWeightKg', 'defaultUnitsPerCarton', 'cartonLengthCm',
           'cartonWidthCm', 'cartonHeightCm', 'originCountry',
           'createdAt', 'updatedAt'
@@ -217,7 +225,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'id', 'ownerId', 'sku', 'nameEn', 'nameLocal',
           'size', 'material', 'surfaceFinish', 'hsCode',
-          'unit', 'unitPrice', 'currency', 'unitNetWeightKg',
+          'unit', 'unitPrice', 'currency', 'tieredPrices', 'unitNetWeightKg',
           'unitGrossWeightKg', 'defaultUnitsPerCarton', 'cartonLengthCm',
           'cartonWidthCm', 'cartonHeightCm', 'originCountry',
           'createdAt', 'updatedAt'
@@ -237,6 +245,18 @@ service cloud.firestore {
         && isStrLen(data.unit, 1, 40)
         && isNonNegNum(data.unitPrice)
         && isValidCurrency(data.currency)
+        && data.tieredPrices is list
+        && data.tieredPrices.size() <= 20
+        && (
+          data.tieredPrices.size() == 0 || (
+            data.tieredPrices[0] is map
+            && data.tieredPrices[0].keys().hasAll(['minQty', 'maxQty', 'unitPrice'])
+            && data.tieredPrices[0].keys().hasOnly(['minQty', 'maxQty', 'unitPrice'])
+            && isNonNegNum(data.tieredPrices[0].minQty)
+            && (data.tieredPrices[0].maxQty == null || isNonNegNum(data.tieredPrices[0].maxQty))
+            && isNonNegNum(data.tieredPrices[0].unitPrice)
+          )
+        )
         && isNonNegNum(data.unitNetWeightKg)
         && isNonNegNum(data.unitGrossWeightKg)
         && isNonNegNum(data.defaultUnitsPerCarton)
@@ -299,16 +319,16 @@ service cloud.firestore {
     function isValidOrder(data, userId, docId) {
       return data.keys().hasAll([
           'id', 'ownerId', 'invoiceNo', 'poNo', 'orderDate', 'paymentTerms',
-          'currency', 'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
-          'itemHeader', 'palletCount', 'emptyCartons', 'palletVolumeDetails',
+          'currency', 'exchangeRate', 'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
+          'itemHeader', 'palletCount', 'emptyCartons', 'cartonsPerLayer', 'palletVolumeDetails',
           'surfaceFootnotes', 'packingRows',
           'items', 'shipping', 'costs', 'remarks',
           'orderCreatedAt', 'orderUpdatedAt', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'id', 'ownerId', 'invoiceNo', 'poNo', 'orderDate', 'paymentTerms',
-          'currency', 'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
-          'itemHeader', 'palletCount', 'emptyCartons', 'palletVolumeDetails',
+          'currency', 'exchangeRate', 'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
+          'itemHeader', 'palletCount', 'emptyCartons', 'cartonsPerLayer', 'palletVolumeDetails',
           'surfaceFootnotes', 'packingRows',
           'items', 'shipping', 'costs', 'remarks',
           'orderCreatedAt', 'orderUpdatedAt', 'createdAt', 'updatedAt'
@@ -323,6 +343,8 @@ service cloud.firestore {
         && isStrLen(data.orderDate, 0, 40)
         && isStrLen(data.paymentTerms, 0, 240)
         && isValidCurrency(data.currency)
+        && isNonNegNum(data.exchangeRate)
+        && data.exchangeRate > 0
         && isStrLen(data.supplierId, 0, 128)
         && isStrLen(data.customerId, 0, 128)
         && isStrLen(data.billToCustomerId, 0, 128)
@@ -330,6 +352,8 @@ service cloud.firestore {
         && isStrLen(data.itemHeader, 0, 240)
         && isNonNegNum(data.palletCount)
         && isNonNegNum(data.emptyCartons)
+        && isNonNegNum(data.cartonsPerLayer)
+        && data.cartonsPerLayer >= 1
         && isStrLen(data.palletVolumeDetails, 0, 1000)
         && isStrLen(data.surfaceFootnotes, 0, 1000)
         && data.packingRows is list
@@ -428,8 +452,8 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'code', 'name', 'country', 'address', 'contactName',
-            'email', 'phone', 'defaultCurrency', 'defaultIncoterm',
-            'notifyParty', 'customPrices', 'updatedAt'
+            'email', 'phone', 'fax', 'taxOrImporterId', 'defaultCurrency',
+            'defaultIncoterm', 'notifyParty', 'customPrices', 'updatedAt'
           ]);
         allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId);
       }
@@ -526,7 +550,7 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'sku', 'nameEn', 'nameLocal', 'size', 'material', 'surfaceFinish',
-            'hsCode', 'unit', 'unitPrice', 'currency', 'unitNetWeightKg',
+            'hsCode', 'unit', 'unitPrice', 'currency', 'tieredPrices', 'unitNetWeightKg',
             'unitGrossWeightKg', 'defaultUnitsPerCarton', 'cartonLengthCm',
             'cartonWidthCm', 'cartonHeightCm', 'originCountry', 'updatedAt'
           ]);
@@ -551,9 +575,9 @@ service cloud.firestore {
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'invoiceNo', 'poNo', 'orderDate', 'paymentTerms', 'currency',
+            'invoiceNo', 'poNo', 'orderDate', 'paymentTerms', 'currency', 'exchangeRate',
             'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
-            'itemHeader', 'palletCount', 'emptyCartons', 'palletVolumeDetails',
+            'itemHeader', 'palletCount', 'emptyCartons', 'cartonsPerLayer', 'palletVolumeDetails',
             'surfaceFootnotes', 'packingRows', 'items',
             'shipping', 'costs', 'remarks', 'orderCreatedAt', 'orderUpdatedAt', 'updatedAt'
           ]);

@@ -18,6 +18,7 @@ import type {
   IncotermCode,
   LogisticsProvider,
   MasterTab,
+  PriceTier,
   Product,
   Supplier,
   TransportMode,
@@ -192,6 +193,8 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
         contactName: '',
         email: '',
         phone: '',
+        fax: '',
+        taxOrImporterId: '',
         defaultCurrency: 'USD',
         defaultIncoterm: 'FOB',
         notifyParty: '',
@@ -247,8 +250,9 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
         surfaceFinish: '',
         hsCode: '7318.16.00',
         unit: 'SETS',
-        unitPrice: 1,
-        currency: 'USD',
+        unitPrice: 150,
+        currency: 'JPY',
+        tieredPrices: [],
         unitNetWeightKg: 0.05,
         unitGrossWeightKg: 0.055,
         defaultUnitsPerCarton: 100,
@@ -306,7 +310,10 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
             ? { ...cp, unitPrice: price }
             : cp,
         )
-      : [...current, { productId: customPriceProductId, unitPrice: price }];
+      : [
+          ...current,
+          { productId: customPriceProductId, unitPrice: price, tieredPrices: [] },
+        ];
     setEditingCustomer({ ...editingCustomer, customPrices: next });
   };
 
@@ -316,6 +323,19 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
       ...editingCustomer,
       customPrices: (editingCustomer.customPrices ?? []).filter(
         (cp) => cp.productId !== productId,
+      ),
+    });
+  };
+
+  const handleCustomerCustomTiersChange = (
+    productId: string,
+    tiers: PriceTier[],
+  ) => {
+    if (!editingCustomer) return;
+    setEditingCustomer({
+      ...editingCustomer,
+      customPrices: (editingCustomer.customPrices ?? []).map((cp) =>
+        cp.productId === productId ? { ...cp, tieredPrices: tiers } : cp,
       ),
     });
   };
@@ -762,6 +782,24 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
+              <FieldInput
+                id="cust-fax"
+                label={t.lblFaxOptional}
+                value={editingCustomer.fax ?? ''}
+                onChange={(v) =>
+                  setEditingCustomer({ ...editingCustomer, fax: v })
+                }
+              />
+              <FieldInput
+                id="cust-tax-id"
+                label={t.lblTaxOrIdOptional}
+                value={editingCustomer.taxOrImporterId ?? ''}
+                onChange={(v) =>
+                  setEditingCustomer({ ...editingCustomer, taxOrImporterId: v })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label
                   htmlFor="cust-def-cur"
@@ -907,62 +945,71 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                   {t.customPricingEmpty}
                 </div>
               ) : (
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-md max-h-40 overflow-y-auto">
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-md max-h-60 overflow-y-auto">
                   {(editingCustomer.customPrices ?? []).map((cp) => {
                     const prod = products.find((p) => p.id === cp.productId);
                     return (
-                      <div
-                        key={cp.productId}
-                        className="px-3 py-2 flex items-center justify-between gap-2 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-mono-tabular font-semibold text-slate-800 truncate">
-                            {prod?.sku ?? cp.productId}
+                      <div key={cp.productId} className="px-3 py-2 space-y-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-mono-tabular font-semibold text-slate-800 truncate">
+                              {prod?.sku ?? cp.productId}
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              {prod?.nameEn ?? ''} · {t.customPricingBaseLabel}:{' '}
+                              {prod
+                                ? formatMoney(prod.unitPrice, prod.currency)
+                                : '—'}
+                            </div>
                           </div>
-                          <div className="text-[11px] text-slate-500 truncate">
-                            {prod?.nameEn ?? ''} · {t.customPricingBaseLabel}:{' '}
-                            {prod
-                              ? formatMoney(prod.unitPrice, prod.currency)
-                              : '—'}
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              aria-label={`${t.customPricingPriceLabel} ${prod?.sku ?? cp.productId}`}
+                              value={cp.unitPrice}
+                              onChange={(e) => {
+                                const nextVal = Math.max(
+                                  0,
+                                  Number(e.target.value) || 0,
+                                );
+                                setEditingCustomer({
+                                  ...editingCustomer,
+                                  customPrices: (
+                                    editingCustomer.customPrices ?? []
+                                  ).map((entry) =>
+                                    entry.productId === cp.productId
+                                      ? { ...entry, unitPrice: nextVal }
+                                      : entry,
+                                  ),
+                                });
+                              }}
+                              className="w-24 h-7 px-2 text-right font-mono-tabular text-xs border border-slate-300 rounded bg-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRemoveCustomerCustomPrice(cp.productId)
+                              }
+                              aria-label={`${t.btnDelete} ${prod?.sku ?? cp.productId}`}
+                              className="p-1 text-slate-400 hover:text-red-600 rounded"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            aria-label={`${t.customPricingPriceLabel} ${prod?.sku ?? cp.productId}`}
-                            value={cp.unitPrice}
-                            onChange={(e) => {
-                              const nextVal = Math.max(
-                                0,
-                                Number(e.target.value) || 0,
-                              );
-                              setEditingCustomer({
-                                ...editingCustomer,
-                                customPrices: (
-                                  editingCustomer.customPrices ?? []
-                                ).map((entry) =>
-                                  entry.productId === cp.productId
-                                    ? { ...entry, unitPrice: nextVal }
-                                    : entry,
-                                ),
-                              });
-                            }}
-                            className="w-24 h-7 px-2 text-right font-mono-tabular text-xs border border-slate-300 rounded bg-white"
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleRemoveCustomerCustomPrice(cp.productId)
-                            }
-                            aria-label={`${t.btnDelete} ${prod?.sku ?? cp.productId}`}
-                            className="p-1 text-slate-400 hover:text-red-600 rounded"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        <TieredPricingInlineEditor
+                          tiers={cp.tieredPrices ?? []}
+                          onChange={(nextTiers) =>
+                            handleCustomerCustomTiersChange(cp.productId, nextTiers)
+                          }
+                          defaultPrice={cp.unitPrice || prod?.unitPrice || 0}
+                          t={t}
+                          compact
+                        />
                       </div>
                     );
                   })}
@@ -1035,7 +1082,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
             <div className="grid grid-cols-3 gap-3">
               <FieldInput
                 id="sup-exp-id"
-                label={t.colExporterId}
+                label={t.lblTaxOrIdOptional}
                 value={editingSupplier.taxOrExporterId}
                 onChange={(v) =>
                   setEditingSupplier({
@@ -1054,7 +1101,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
               />
               <FieldInput
                 id="sup-fax"
-                label={t.lblFax}
+                label={t.lblFaxOptional}
                 value={editingSupplier.fax ?? ''}
                 onChange={(v) =>
                   setEditingSupplier({ ...editingSupplier, fax: v })
@@ -1392,7 +1439,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                 }
               />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <FieldNumber
                 id="prod-price"
                 label={t.colUnitPrice}
@@ -1402,6 +1449,31 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                   setEditingProduct({ ...editingProduct, unitPrice: v })
                 }
               />
+              <div>
+                <label
+                  htmlFor="prod-currency"
+                  className="block text-xs font-medium text-slate-700 mb-1"
+                >
+                  {t.productCurrencyLabel}
+                </label>
+                <select
+                  id="prod-currency"
+                  value={editingProduct.currency}
+                  onChange={(e) =>
+                    setEditingProduct({
+                      ...editingProduct,
+                      currency: e.target.value as CurrencyCode,
+                    })
+                  }
+                  className="w-full h-9 px-2 text-sm font-mono-tabular border border-slate-300 rounded-md"
+                >
+                  {(['JPY', 'USD', 'EUR', 'CNY'] as CurrencyCode[]).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <FieldInput
                 id="prod-unit"
                 label={t.colUnit}
@@ -1447,6 +1519,26 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                     unitGrossWeightKg: v,
                   })
                 }
+              />
+            </div>
+
+            <div className="pt-2 border-t border-slate-200 space-y-2">
+              <div className="text-xs font-semibold text-slate-900">
+                {t.tieredPricingTitle}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                {t.tieredPricingHint}
+              </p>
+              <TieredPricingInlineEditor
+                tiers={editingProduct.tieredPrices ?? []}
+                onChange={(nextTiers) =>
+                  setEditingProduct({
+                    ...editingProduct,
+                    tieredPrices: nextTiers,
+                  })
+                }
+                defaultPrice={editingProduct.unitPrice}
+                t={t}
               />
             </div>
             <ModalFooter
@@ -1672,3 +1764,109 @@ const FieldNumber: React.FC<{
     />
   </div>
 );
+
+const TieredPricingInlineEditor: React.FC<{
+  tiers: PriceTier[];
+  onChange: (tiers: PriceTier[]) => void;
+  defaultPrice: number;
+  t: UiDictionary;
+  compact?: boolean;
+}> = ({ tiers, onChange, defaultPrice, t, compact = false }) => {
+  const handleAddTier = () => {
+    const lastMax =
+      tiers.length > 0 ? tiers[tiers.length - 1].maxQty ?? tiers[tiers.length - 1].minQty : 0;
+    const nextMin = lastMax > 0 ? lastMax + 1 : 1;
+    onChange([
+      ...tiers,
+      {
+        minQty: nextMin,
+        maxQty: null,
+        unitPrice: defaultPrice,
+      },
+    ]);
+  };
+
+  return (
+    <div className={compact ? 'pl-2 border-l-2 border-amber-200 space-y-1.5' : 'space-y-1.5'}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium text-slate-600">
+          {t.tieredPricingTitle} ({tiers.length})
+        </span>
+        <button
+          type="button"
+          onClick={handleAddTier}
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+        >
+          <Plus className="w-3 h-3" />
+          <span>{t.tierAddBtn}</span>
+        </button>
+      </div>
+
+      {tiers.map((tier, idx) => (
+        <div
+          key={idx}
+          className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1.5 text-[11px]"
+        >
+          <input
+            type="number"
+            min={0}
+            aria-label={`${t.tierMinQty} ${idx + 1}`}
+            placeholder={t.tierMinQty}
+            value={tier.minQty}
+            onChange={(e) => {
+              const nextVal = Math.max(0, Number(e.target.value) || 0);
+              onChange(
+                tiers.map((item, i) =>
+                  i === idx ? { ...item, minQty: nextVal } : item,
+                ),
+              );
+            }}
+            className="h-7 px-2 font-mono-tabular border border-slate-300 rounded bg-white"
+          />
+          <input
+            type="number"
+            min={0}
+            aria-label={`${t.tierMaxQty} ${idx + 1}`}
+            placeholder={t.tierUnlimited}
+            value={tier.maxQty ?? ''}
+            onChange={(e) => {
+              const raw = e.target.value.trim();
+              const nextMax = raw === '' ? null : Math.max(0, Number(raw) || 0);
+              onChange(
+                tiers.map((item, i) =>
+                  i === idx ? { ...item, maxQty: nextMax } : item,
+                ),
+              );
+            }}
+            className="h-7 px-2 font-mono-tabular border border-slate-300 rounded bg-white"
+          />
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            aria-label={`${t.tierUnitPrice} ${idx + 1}`}
+            placeholder={t.tierUnitPrice}
+            value={tier.unitPrice}
+            onChange={(e) => {
+              const nextPrice = Math.max(0, Number(e.target.value) || 0);
+              onChange(
+                tiers.map((item, i) =>
+                  i === idx ? { ...item, unitPrice: nextPrice } : item,
+                ),
+              );
+            }}
+            className="h-7 px-2 text-right font-mono-tabular border border-slate-300 rounded bg-white"
+          />
+          <button
+            type="button"
+            onClick={() => onChange(tiers.filter((_, i) => i !== idx))}
+            aria-label={`${t.btnDelete} tier ${idx + 1}`}
+            className="p-1 text-slate-400 hover:text-red-600 rounded"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+};

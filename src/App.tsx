@@ -30,11 +30,14 @@ import {
   triggerJsonBackupDownload,
 } from './utils/storage';
 import {
+  calculateItemCartons,
   calculateOrderSummary,
+  calculatePalletPacking,
   formatMoney,
+  getDefaultExchangeRate,
   resolveActiveOrder,
 } from './utils/exportCalculations';
-import { resolveCustomerProductPrice } from './utils/importExportUtils';
+import { resolveCustomerProductPricing } from './utils/importExportUtils';
 import { AuthScreen } from './components/AuthScreen';
 import { SidebarNav } from './components/SidebarNav';
 import { TopHeader } from './components/TopHeader';
@@ -87,7 +90,7 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
-  const orderFlushTimerRef = useRef<number | null>(null);
+  const orderFlushTimersRef = useRef<Map<string, number>>(new Map());
   const dirtyOrderIdsRef = useRef<Set<string>>(new Set());
 
   if (fatalError) {
@@ -176,10 +179,10 @@ export default function App() {
 
     return () => {
       cancelled = true;
-      if (orderFlushTimerRef.current) {
-        window.clearTimeout(orderFlushTimerRef.current);
-        orderFlushTimerRef.current = null;
-      }
+      orderFlushTimersRef.current.forEach((timerId) =>
+        window.clearTimeout(timerId),
+      );
+      orderFlushTimersRef.current.clear();
       dirtyOrderIdsRef.current.clear();
       unsubFirestore?.();
     };
@@ -267,20 +270,24 @@ export default function App() {
     }));
     if (!uid) return;
     dirtyOrderIdsRef.current.add(updated.id);
-    if (orderFlushTimerRef.current) {
-      window.clearTimeout(orderFlushTimerRef.current);
+    const existingTimer = orderFlushTimersRef.current.get(updated.id);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
     }
-    orderFlushTimerRef.current = window.setTimeout(() => {
+    const nextTimer = window.setTimeout(() => {
+      orderFlushTimersRef.current.delete(updated.id);
       dirtyOrderIdsRef.current.delete(updated.id);
       void cloudErpOps.saveOrder(uid, updated, true).catch(setFatalError);
     }, 650);
+    orderFlushTimersRef.current.set(updated.id, nextTimer);
   };
 
   const handleExplicitSaveOrder = async () => {
     if (!activeOrder || !uid) return;
-    if (orderFlushTimerRef.current) {
-      window.clearTimeout(orderFlushTimerRef.current);
-      orderFlushTimerRef.current = null;
+    const existingTimer = orderFlushTimersRef.current.get(activeOrder.id);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      orderFlushTimersRef.current.delete(activeOrder.id);
     }
     dirtyOrderIdsRef.current.delete(activeOrder.id);
 
@@ -320,20 +327,41 @@ export default function App() {
     const bank = state.bankAccounts[0];
     const prod = state.products[0];
 
+    const orderCurrency = cust?.defaultCurrency ?? 'JPY';
+    const orderExchangeRate = getDefaultExchangeRate(orderCurrency);
+    const initialQty = prod ? prod.defaultUnitsPerCarton || 100 : 0;
+    const initialCartons = prod
+      ? calculateItemCartons(initialQty, prod.defaultUnitsPerCarton || 100)
+      : 0;
+    const initialPacking = calculatePalletPacking(initialCartons, {
+      cartonsPerLayer: 12,
+    });
+    const resolvedPrice = prod
+      ? resolveCustomerProductPricing(
+          cust,
+          prod,
+          initialQty,
+          orderCurrency,
+          orderExchangeRate,
+        )
+      : { unitPrice: 0, basePriceJpy: 0 };
+
     const newOrder: ExportOrder = {
       id: `ord-${Date.now()}`,
       invoiceNo: `HL-INV-${now.getFullYear()}-${seq}`,
       poNo: `PO-${seq}`,
       orderDate: dateStr,
       paymentTerms: 'T/T IN ADVANCE',
-      currency: cust?.defaultCurrency ?? 'USD',
+      currency: orderCurrency,
+      exchangeRate: orderExchangeRate,
       supplierId: sup?.id ?? '',
       customerId: cust?.id ?? '',
       billToCustomerId: '',
       bankAccountId: bank?.id ?? '',
       itemHeader: 'HARDLOCK NUT (HLN)',
-      palletCount: 1,
-      emptyCartons: 0,
+      palletCount: initialPacking.palletCount,
+      emptyCartons: initialPacking.emptyCartons,
+      cartonsPerLayer: 12,
       palletVolumeDetails: '',
       surfaceFootnotes: '',
       packingRows: [],
@@ -348,10 +376,11 @@ export default function App() {
               material: prod.material ?? '',
               surfaceFinish: prod.surfaceFinish ?? '',
               hsCode: prod.hsCode,
-              quantity: prod.defaultUnitsPerCarton,
+              quantity: initialQty,
               unit: prod.unit,
-              unitPrice: resolveCustomerProductPrice(cust, prod).unitPrice,
-              cartons: 1,
+              unitPrice: resolvedPrice.unitPrice,
+              baseUnitPriceJpy: resolvedPrice.basePriceJpy,
+              cartons: initialCartons,
               unitNetWeightKg: prod.unitNetWeightKg,
               unitGrossWeightKg: prod.unitGrossWeightKg,
               cartonLengthCm: prod.cartonLengthCm,
@@ -359,7 +388,7 @@ export default function App() {
               cartonHeightCm: prod.cartonHeightCm,
               originCountry: prod.originCountry,
               palletNo: '1',
-              cartonRange: '1',
+              cartonRange: initialCartons > 1 ? `1 - ${initialCartons}` : '1',
               setsPerCarton: prod.defaultUnitsPerCarton,
             },
           ]
@@ -729,10 +758,10 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    if (orderFlushTimerRef.current) {
-      window.clearTimeout(orderFlushTimerRef.current);
-      orderFlushTimerRef.current = null;
-    }
+    orderFlushTimersRef.current.forEach((timerId) =>
+      window.clearTimeout(timerId),
+    );
+    orderFlushTimersRef.current.clear();
     dirtyOrderIdsRef.current.clear();
     await signOut(auth);
   };
@@ -868,6 +897,10 @@ export default function App() {
               orders={state.orders}
               activeOrderId={state.activeOrderId}
               customers={state.customers}
+              suppliers={state.suppliers}
+              bankAccounts={state.bankAccounts}
+              products={state.products}
+              docLang={state.docLang}
               auditLogs={state.auditLogs}
               snapshots={state.snapshots}
               onLoadOrder={(id) => {

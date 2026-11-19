@@ -6,9 +6,9 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Phase 3: Reusable Hardened Primitives
+    // Reusable Hardened Primitives
     function isValidId(id) {
-      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     function incoming() {
@@ -27,10 +27,6 @@ service cloud.firestore {
       return isSignedIn()
         && request.auth.token.email_verified == true
         && request.auth.uid == userId;
-    }
-
-    function hasParentUser(userId) {
-      return exists(/databases/$(database)/documents/users/$(userId));
     }
 
     function isNonNegNum(val) {
@@ -53,7 +49,7 @@ service cloud.firestore {
       return val is string && val in ['SEA', 'AIR', 'EXPRESS', 'LAND'];
     }
 
-    // Pillar 2: Validation Blueprints (Anti-Update-Gap)
+    // Validation Blueprints
     function isValidUserProfile(data, userId) {
       return data.keys().hasAll([
           'uid', 'email', 'displayName', 'companyName',
@@ -79,13 +75,15 @@ service cloud.firestore {
     function isValidCustomer(data, userId, docId) {
       return data.keys().hasAll([
           'id', 'ownerId', 'code', 'name', 'country', 'address',
-          'contactName', 'email', 'phone', 'defaultCurrency',
-          'defaultIncoterm', 'notifyParty', 'createdAt', 'updatedAt'
+          'contactName', 'email', 'phone', 'fax', 'taxOrImporterId',
+          'defaultCurrency', 'defaultIncoterm', 'notifyParty', 'customPrices',
+          'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'id', 'ownerId', 'code', 'name', 'country', 'address',
-          'contactName', 'email', 'phone', 'defaultCurrency',
-          'defaultIncoterm', 'notifyParty', 'createdAt', 'updatedAt'
+          'contactName', 'email', 'phone', 'fax', 'taxOrImporterId',
+          'defaultCurrency', 'defaultIncoterm', 'notifyParty', 'customPrices',
+          'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
         && data.id == docId
@@ -99,9 +97,28 @@ service cloud.firestore {
         && isStrLen(data.contactName, 0, 240)
         && isStrLen(data.email, 0, 240)
         && isStrLen(data.phone, 0, 240)
+        && isStrLen(data.fax, 0, 240)
+        && isStrLen(data.taxOrImporterId, 0, 100)
         && isValidCurrency(data.defaultCurrency)
         && isValidIncoterm(data.defaultIncoterm)
         && isStrLen(data.notifyParty, 0, 1000)
+        && data.customPrices is list
+        && data.customPrices.size() <= 100
+        && (
+          data.customPrices.size() == 0 || (
+            data.customPrices[0] is map
+            && data.customPrices[0].keys().hasAll(['productId', 'unitPrice'])
+            && data.customPrices[0].keys().hasOnly(['productId', 'unitPrice', 'tieredPrices'])
+            && isValidId(data.customPrices[0].productId)
+            && isNonNegNum(data.customPrices[0].unitPrice)
+            && (
+              !('tieredPrices' in data.customPrices[0]) || (
+                data.customPrices[0].tieredPrices is list
+                && data.customPrices[0].tieredPrices.size() <= 20
+              )
+            )
+          )
+        )
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -109,12 +126,12 @@ service cloud.firestore {
     function isValidSupplier(data, userId, docId) {
       return data.keys().hasAll([
           'id', 'ownerId', 'code', 'name', 'country', 'address',
-          'contactName', 'email', 'phone', 'taxOrExporterId',
+          'contactName', 'email', 'phone', 'fax', 'taxOrExporterId',
           'signatoryName', 'signatoryTitle', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'id', 'ownerId', 'code', 'name', 'country', 'address',
-          'contactName', 'email', 'phone', 'taxOrExporterId',
+          'contactName', 'email', 'phone', 'fax', 'taxOrExporterId',
           'signatoryName', 'signatoryTitle', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
@@ -129,6 +146,7 @@ service cloud.firestore {
         && isStrLen(data.contactName, 0, 240)
         && isStrLen(data.email, 0, 240)
         && isStrLen(data.phone, 0, 240)
+        && isStrLen(data.fax, 0, 240)
         && isStrLen(data.taxOrExporterId, 0, 100)
         && isStrLen(data.signatoryName, 0, 240)
         && isStrLen(data.signatoryTitle, 0, 240)
@@ -197,15 +215,17 @@ service cloud.firestore {
 
     function isValidProduct(data, userId, docId) {
       return data.keys().hasAll([
-          'id', 'ownerId', 'sku', 'nameEn', 'nameLocal', 'hsCode',
-          'unit', 'unitPrice', 'currency', 'unitNetWeightKg',
+          'id', 'ownerId', 'sku', 'nameEn', 'nameLocal',
+          'size', 'material', 'surfaceFinish', 'hsCode',
+          'unit', 'unitPrice', 'currency', 'tieredPrices', 'unitNetWeightKg',
           'unitGrossWeightKg', 'defaultUnitsPerCarton', 'cartonLengthCm',
           'cartonWidthCm', 'cartonHeightCm', 'originCountry',
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'id', 'ownerId', 'sku', 'nameEn', 'nameLocal', 'hsCode',
-          'unit', 'unitPrice', 'currency', 'unitNetWeightKg',
+          'id', 'ownerId', 'sku', 'nameEn', 'nameLocal',
+          'size', 'material', 'surfaceFinish', 'hsCode',
+          'unit', 'unitPrice', 'currency', 'tieredPrices', 'unitNetWeightKg',
           'unitGrossWeightKg', 'defaultUnitsPerCarton', 'cartonLengthCm',
           'cartonWidthCm', 'cartonHeightCm', 'originCountry',
           'createdAt', 'updatedAt'
@@ -218,10 +238,25 @@ service cloud.firestore {
         && isStrLen(data.sku, 1, 80)
         && isStrLen(data.nameEn, 1, 1000)
         && isStrLen(data.nameLocal, 0, 1000)
+        && isStrLen(data.size, 0, 80)
+        && isStrLen(data.material, 0, 80)
+        && isStrLen(data.surfaceFinish, 0, 80)
         && isStrLen(data.hsCode, 0, 80)
         && isStrLen(data.unit, 1, 40)
         && isNonNegNum(data.unitPrice)
         && isValidCurrency(data.currency)
+        && data.tieredPrices is list
+        && data.tieredPrices.size() <= 20
+        && (
+          data.tieredPrices.size() == 0 || (
+            data.tieredPrices[0] is map
+            && data.tieredPrices[0].keys().hasAll(['minQty', 'maxQty', 'unitPrice'])
+            && data.tieredPrices[0].keys().hasOnly(['minQty', 'maxQty', 'unitPrice'])
+            && isNonNegNum(data.tieredPrices[0].minQty)
+            && (data.tieredPrices[0].maxQty == null || isNonNegNum(data.tieredPrices[0].maxQty))
+            && isNonNegNum(data.tieredPrices[0].unitPrice)
+          )
+        )
         && isNonNegNum(data.unitNetWeightKg)
         && isNonNegNum(data.unitGrossWeightKg)
         && isNonNegNum(data.defaultUnitsPerCarton)
@@ -284,13 +319,17 @@ service cloud.firestore {
     function isValidOrder(data, userId, docId) {
       return data.keys().hasAll([
           'id', 'ownerId', 'invoiceNo', 'poNo', 'orderDate', 'paymentTerms',
-          'currency', 'supplierId', 'customerId', 'bankAccountId',
+          'currency', 'exchangeRate', 'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
+          'itemHeader', 'palletCount', 'emptyCartons', 'cartonsPerLayer', 'palletVolumeDetails',
+          'surfaceFootnotes', 'packingRows',
           'items', 'shipping', 'costs', 'remarks',
           'orderCreatedAt', 'orderUpdatedAt', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'id', 'ownerId', 'invoiceNo', 'poNo', 'orderDate', 'paymentTerms',
-          'currency', 'supplierId', 'customerId', 'bankAccountId',
+          'currency', 'exchangeRate', 'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
+          'itemHeader', 'palletCount', 'emptyCartons', 'cartonsPerLayer', 'palletVolumeDetails',
+          'surfaceFootnotes', 'packingRows',
           'items', 'shipping', 'costs', 'remarks',
           'orderCreatedAt', 'orderUpdatedAt', 'createdAt', 'updatedAt'
         ])
@@ -304,9 +343,29 @@ service cloud.firestore {
         && isStrLen(data.orderDate, 0, 40)
         && isStrLen(data.paymentTerms, 0, 240)
         && isValidCurrency(data.currency)
+        && isNonNegNum(data.exchangeRate)
+        && data.exchangeRate > 0
         && isStrLen(data.supplierId, 0, 128)
         && isStrLen(data.customerId, 0, 128)
+        && isStrLen(data.billToCustomerId, 0, 128)
         && isStrLen(data.bankAccountId, 0, 128)
+        && isStrLen(data.itemHeader, 0, 240)
+        && isNonNegNum(data.palletCount)
+        && isNonNegNum(data.emptyCartons)
+        && isNonNegNum(data.cartonsPerLayer)
+        && data.cartonsPerLayer >= 1
+        && isStrLen(data.palletVolumeDetails, 0, 1000)
+        && isStrLen(data.surfaceFootnotes, 0, 1000)
+        && data.packingRows is list
+        && data.packingRows.size() <= 100
+        && (
+          data.packingRows.size() == 0 || (
+            data.packingRows[0] is map
+            && isStrLen(data.packingRows[0].palletNo, 0, 80)
+            && isStrLen(data.packingRows[0].ctnNo, 0, 80)
+            && isNonNegNum(data.packingRows[0].qty)
+          )
+        )
         && data.items is list
         && data.items.size() <= 50
         && (
@@ -369,28 +428,23 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          // Action: Update workspace preferences
           incoming().diff(existing()).affectedKeys().hasOnly(['uiLang', 'docLang', 'activeOrderId', 'updatedAt']) ||
-          // Action: Update operator profile details
           incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'companyName', 'updatedAt'])
         );
       allow delete: if false;
 
-      // Subcollection: Customers
       match /customers/{customerId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(customerId)
-          && hasParentUser(userId)
           && isValidCustomer(incoming(), userId, customerId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(customerId)
-          && hasParentUser(userId)
           && isValidCustomer(incoming(), userId, customerId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -398,27 +452,24 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'code', 'name', 'country', 'address', 'contactName',
-            'email', 'phone', 'defaultCurrency', 'defaultIncoterm',
-            'notifyParty', 'updatedAt'
+            'email', 'phone', 'fax', 'taxOrImporterId', 'defaultCurrency',
+            'defaultIncoterm', 'notifyParty', 'customPrices', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId);
       }
 
-      // Subcollection: Suppliers
       match /suppliers/{supplierId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(supplierId)
-          && hasParentUser(userId)
           && isValidSupplier(incoming(), userId, supplierId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(supplierId)
-          && hasParentUser(userId)
           && isValidSupplier(incoming(), userId, supplierId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -426,27 +477,24 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'code', 'name', 'country', 'address', 'contactName',
-            'email', 'phone', 'taxOrExporterId', 'signatoryName',
+            'email', 'phone', 'fax', 'taxOrExporterId', 'signatoryName',
             'signatoryTitle', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(supplierId);
       }
 
-      // Subcollection: Logistics Providers
       match /logisticsProviders/{providerId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(providerId)
-          && hasParentUser(userId)
           && isValidLogistics(incoming(), userId, providerId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(providerId)
-          && hasParentUser(userId)
           && isValidLogistics(incoming(), userId, providerId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -456,24 +504,21 @@ service cloud.firestore {
             'code', 'name', 'supportedModes', 'contactName',
             'phone', 'email', 'accountNo', 'defaultPortOrHub', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(providerId);
       }
 
-      // Subcollection: Bank Accounts
       match /bankAccounts/{bankId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(bankId)
-          && hasParentUser(userId)
           && isValidBankAccount(incoming(), userId, bankId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(bankId)
-          && hasParentUser(userId)
           && isValidBankAccount(incoming(), userId, bankId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
@@ -483,79 +528,73 @@ service cloud.firestore {
             'label', 'bankName', 'branchName', 'swiftCode',
             'accountName', 'accountNumber', 'currency', 'bankAddress', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bankId);
       }
 
-      // Subcollection: Products
       match /products/{productId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(productId)
-          && hasParentUser(userId)
           && isValidProduct(incoming(), userId, productId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(productId)
-          && hasParentUser(userId)
           && isValidProduct(incoming(), userId, productId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'sku', 'nameEn', 'nameLocal', 'hsCode', 'unit', 'unitPrice',
-            'currency', 'unitNetWeightKg', 'unitGrossWeightKg',
-            'defaultUnitsPerCarton', 'cartonLengthCm', 'cartonWidthCm',
-            'cartonHeightCm', 'originCountry', 'updatedAt'
+            'sku', 'nameEn', 'nameLocal', 'size', 'material', 'surfaceFinish',
+            'hsCode', 'unit', 'unitPrice', 'currency', 'tieredPrices', 'unitNetWeightKg',
+            'unitGrossWeightKg', 'defaultUnitsPerCarton', 'cartonLengthCm',
+            'cartonWidthCm', 'cartonHeightCm', 'originCountry', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(productId);
       }
 
-      // Subcollection: Export Orders
       match /orders/{orderId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(orderId)
-          && hasParentUser(userId)
           && isValidOrder(incoming(), userId, orderId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(orderId)
-          && hasParentUser(userId)
           && isValidOrder(incoming(), userId, orderId)
           && incoming().id == existing().id
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'invoiceNo', 'poNo', 'orderDate', 'paymentTerms', 'currency',
-            'supplierId', 'customerId', 'bankAccountId', 'items',
+            'invoiceNo', 'poNo', 'orderDate', 'paymentTerms', 'currency', 'exchangeRate',
+            'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
+            'itemHeader', 'palletCount', 'emptyCartons', 'cartonsPerLayer', 'palletVolumeDetails',
+            'surfaceFootnotes', 'packingRows', 'items',
             'shipping', 'costs', 'remarks', 'orderCreatedAt', 'orderUpdatedAt', 'updatedAt'
           ]);
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId);
       }
 
-      // Subcollection: Audit Logs (Immutable once created)
       match /auditLogs/{logId} {
-        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId) && hasParentUser(userId);
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId);
         allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
         allow create: if isVerifiedOwner(userId)
           && isValidId(userId)
           && isValidId(logId)
-          && hasParentUser(userId)
           && isValidAuditLog(incoming(), userId, logId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time;
         allow update: if false;
-        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId) && hasParentUser(userId);
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(logId);
       }
     }
   }

@@ -30,13 +30,18 @@ import type {
 } from '../types/erp';
 import type { UiDictionary } from '../i18n/uiTranslations';
 import {
+  calculateItemCartons,
   calculateOrderSummary,
+  calculatePalletPacking,
   formatMoney,
+  getDefaultExchangeRate,
+  resolveEffectiveExchangeRate,
 } from '../utils/exportCalculations';
 import { buildPackingListDisplayRows, resolveItemSpecs } from '../utils/documentHelpers';
 import {
   applyCustomerPricingToItems,
-  resolveCustomerProductPrice,
+  convertPriceToJpy,
+  resolveCustomerProductPricing,
 } from '../utils/importExportUtils';
 
 interface OrderWorkspaceProps {
@@ -192,6 +197,41 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
     );
   }
 
+  const effectiveExchangeRate = resolveEffectiveExchangeRate(
+    order.currency,
+    order.exchangeRate,
+  );
+  const effectiveCartonsPerLayer = Math.max(
+    1,
+    Math.round(order.cartonsPerLayer ?? 12),
+  );
+
+  const buildOrderWithPalletSync = (
+    nextItems: OrderItem[],
+    patch?: Partial<ExportOrder>,
+  ): ExportOrder => {
+    const totalCtns = nextItems.reduce(
+      (sum, it) => sum + Math.max(0, Number(it.cartons) || 0),
+      0,
+    );
+    const layerSize = Math.max(
+      1,
+      Math.round(patch?.cartonsPerLayer ?? order.cartonsPerLayer ?? 12),
+    );
+    const pack = calculatePalletPacking(totalCtns, {
+      cartonsPerLayer: layerSize,
+    });
+    return {
+      ...order,
+      ...patch,
+      items: nextItems,
+      palletCount: patch?.palletCount ?? pack.palletCount,
+      emptyCartons: patch?.emptyCartons ?? pack.emptyCartons,
+      cartonsPerLayer: layerSize,
+      updatedAt: new Date().toISOString(),
+    };
+  };
+
   const updateOrder = (patch: Partial<ExportOrder>) => {
     onChangeOrder({
       ...order,
@@ -222,6 +262,62 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
     });
   };
 
+  const seedBasePricesJpy = (items: OrderItem[], sourceCur: CurrencyCode, sourceRate: number) =>
+    items.map((item) => {
+      if (
+        typeof item.baseUnitPriceJpy === 'number' &&
+        Number.isFinite(item.baseUnitPriceJpy) &&
+        item.baseUnitPriceJpy >= 0
+      ) {
+        return item;
+      }
+      return {
+        ...item,
+        baseUnitPriceJpy: convertPriceToJpy(item.unitPrice, sourceCur, sourceRate),
+      };
+    });
+
+  const handleCurrencyChange = (nextCurrency: CurrencyCode) => {
+    const nextRate = getDefaultExchangeRate(nextCurrency);
+    const itemsWithBase = seedBasePricesJpy(
+      order.items,
+      order.currency,
+      effectiveExchangeRate,
+    );
+    const repricedItems = applyCustomerPricingToItems(
+      itemsWithBase,
+      currentCustomer,
+      products,
+      nextCurrency,
+      nextRate,
+    );
+    updateOrder({
+      currency: nextCurrency,
+      exchangeRate: nextRate,
+      items: repricedItems,
+    });
+  };
+
+  const handleExchangeRateChange = (rawRate: number) => {
+    const nextRate = Math.max(0.0001, Number(rawRate) || getDefaultExchangeRate(order.currency));
+    const itemsWithBase = seedBasePricesJpy(
+      order.items,
+      order.currency,
+      effectiveExchangeRate,
+    );
+    const repricedItems = applyCustomerPricingToItems(
+      itemsWithBase,
+      currentCustomer,
+      products,
+      order.currency,
+      nextRate,
+    );
+    updateOrder({
+      exchangeRate: nextRate,
+      items: repricedItems,
+    });
+  };
+
   const handleCustomerSelect = (customerId: string) => {
     const cust = customers.find((c) => c.id === customerId);
     if (!cust) {
@@ -229,15 +325,28 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       return;
     }
     const shortMark = cust.name.split(' ')[0].toUpperCase();
-    const repricedItems = applyCustomerPricingToItems(
+    const nextCurrency = cust.defaultCurrency;
+    const nextRate =
+      nextCurrency === order.currency
+        ? effectiveExchangeRate
+        : getDefaultExchangeRate(nextCurrency);
+    const itemsWithBase = seedBasePricesJpy(
       order.items,
+      order.currency,
+      effectiveExchangeRate,
+    );
+    const repricedItems = applyCustomerPricingToItems(
+      itemsWithBase,
       cust,
       products,
+      nextCurrency,
+      nextRate,
     );
     onChangeOrder({
       ...order,
       customerId,
-      currency: cust.defaultCurrency,
+      currency: nextCurrency,
+      exchangeRate: nextRate,
       items: repricedItems,
       shipping: {
         ...order.shipping,
@@ -275,9 +384,16 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       products.find((p) => p.id === effectiveSelectedProductId) ?? products[0];
     if (!prod) return;
     const defaultQty = prod.defaultUnitsPerCarton || 100;
-    const { unitPrice: resolvedUnitPrice } = resolveCustomerProductPrice(
+    const resolved = resolveCustomerProductPricing(
       currentCustomer,
       prod,
+      defaultQty,
+      order.currency,
+      effectiveExchangeRate,
+    );
+    const itemCartons = Math.max(
+      1,
+      calculateItemCartons(defaultQty, prod.defaultUnitsPerCarton || 100),
     );
     const newItem: OrderItem = {
       id: `oi-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
@@ -290,8 +406,9 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       hsCode: prod.hsCode,
       quantity: defaultQty,
       unit: prod.unit,
-      unitPrice: resolvedUnitPrice,
-      cartons: 1,
+      unitPrice: resolved.unitPrice,
+      baseUnitPriceJpy: resolved.basePriceJpy,
+      cartons: itemCartons,
       unitNetWeightKg: prod.unitNetWeightKg,
       unitGrossWeightKg: prod.unitGrossWeightKg,
       cartonLengthCm: prod.cartonLengthCm,
@@ -302,10 +419,11 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       cartonRange: '',
       setsPerCarton: defaultQty,
     };
-    updateOrder({ items: [...order.items, newItem] });
+    onChangeOrder(buildOrderWithPalletSync([...order.items, newItem]));
   };
 
   const handleAddBlankItem = () => {
+    const defaultUnitPrice = order.currency === 'JPY' ? 150 : 1;
     const newItem: OrderItem = {
       id: `oi-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       productId: '',
@@ -317,7 +435,12 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       hsCode: '7318.16.00',
       quantity: 100,
       unit: 'SETS',
-      unitPrice: 1,
+      unitPrice: defaultUnitPrice,
+      baseUnitPriceJpy: convertPriceToJpy(
+        defaultUnitPrice,
+        order.currency,
+        effectiveExchangeRate,
+      ),
       cartons: 1,
       unitNetWeightKg: 0.05,
       unitGrossWeightKg: 0.055,
@@ -329,7 +452,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       cartonRange: '',
       setsPerCarton: 100,
     };
-    updateOrder({ items: [...order.items, newItem] });
+    onChangeOrder(buildOrderWithPalletSync([...order.items, newItem]));
   };
 
   const handleAutoBuildPackingRows = () => {
@@ -406,23 +529,49 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
     const nextItems = order.items.map((item) => {
       if (item.id !== itemId) return item;
       const updated = { ...item, ...patch };
-      // If quantity changed and item comes from a catalog product, auto-recalculate cartons when appropriate
+      if (typeof patch.unitPrice === 'number') {
+        updated.baseUnitPriceJpy = convertPriceToJpy(
+          patch.unitPrice,
+          order.currency,
+          effectiveExchangeRate,
+        );
+      }
+      // When quantity changes on a catalog product: auto-recalculate cartons AND tiered/customer unitPrice
       if (typeof patch.quantity === 'number' && item.productId) {
         const prod = products.find((p) => p.id === item.productId);
-        if (prod && prod.defaultUnitsPerCarton > 0) {
-          updated.cartons = Math.max(
-            1,
-            Math.ceil(patch.quantity / prod.defaultUnitsPerCarton),
-          );
+        if (prod) {
+          if (prod.defaultUnitsPerCarton > 0) {
+            updated.cartons = calculateItemCartons(
+              patch.quantity,
+              prod.defaultUnitsPerCarton,
+            );
+          }
+          if (patch.unitPrice === undefined) {
+            const resolved = resolveCustomerProductPricing(
+              currentCustomer,
+              prod,
+              patch.quantity,
+              order.currency,
+              effectiveExchangeRate,
+            );
+            updated.unitPrice = resolved.unitPrice;
+            updated.baseUnitPriceJpy = resolved.basePriceJpy;
+          }
         }
       }
       return updated;
     });
-    updateOrder({ items: nextItems });
+
+    if (typeof patch.quantity === 'number' || typeof patch.cartons === 'number') {
+      onChangeOrder(buildOrderWithPalletSync(nextItems));
+    } else {
+      updateOrder({ items: nextItems });
+    }
   };
 
   const handleDeleteItem = (itemId: string) => {
-    updateOrder({ items: order.items.filter((i) => i.id !== itemId) });
+    const remaining = order.items.filter((i) => i.id !== itemId);
+    onChangeOrder(buildOrderWithPalletSync(remaining));
   };
 
   const modeFieldLabels = (() => {
@@ -595,7 +744,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 pt-4 border-t border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 pt-4 border-t border-slate-100">
           <div>
             <label
               htmlFor="order-invoice-no"
@@ -655,7 +804,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               id="order-currency"
               value={order.currency}
               onChange={(e) =>
-                updateOrder({ currency: e.target.value as CurrencyCode })
+                handleCurrencyChange(e.target.value as CurrencyCode)
               }
               className="w-full h-9 px-3 text-sm font-mono-tabular bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
             >
@@ -667,7 +816,34 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
             </select>
           </div>
 
-          <div>
+          {order.currency !== 'JPY' && (
+            <div data-testid="exchange-rate-field">
+              <label
+                htmlFor="order-exchange-rate"
+                className="block text-xs font-medium text-slate-700 mb-1.5"
+              >
+                {t.exchangeRateLabel}
+              </label>
+              <input
+                id="order-exchange-rate"
+                type="number"
+                min={0.01}
+                step="0.01"
+                value={effectiveExchangeRate}
+                onChange={(e) =>
+                  handleExchangeRateChange(Number(e.target.value))
+                }
+                className="w-full h-9 px-3 text-sm font-mono-tabular bg-white border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+              <div className="text-[11px] text-slate-500 mt-1">
+                {t.exchangeRateHint
+                  .replace('{cur}', order.currency)
+                  .replace('{rate}', String(effectiveExchangeRate))}
+              </div>
+            </div>
+          )}
+
+          <div className={order.currency === 'JPY' ? 'lg:col-span-2' : ''}>
             <label
               htmlFor="order-payment-terms"
               className="block text-xs font-medium text-slate-700 mb-1.5"
@@ -700,14 +876,24 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               id="catalog-product-pick"
               value={effectiveSelectedProductId}
               onChange={(e) => setSelectedProductId(e.target.value)}
-              className="h-9 px-3 text-xs bg-white border border-slate-300 rounded-md max-w-[260px]"
+              className="h-9 px-3 text-xs bg-white border border-slate-300 rounded-md max-w-[280px]"
             >
               {products.map((p) => {
-                const resolved = resolveCustomerProductPrice(currentCustomer, p);
+                const resolved = resolveCustomerProductPricing(
+                  currentCustomer,
+                  p,
+                  p.defaultUnitsPerCarton || 100,
+                  order.currency,
+                  effectiveExchangeRate,
+                );
                 return (
                   <option key={p.id} value={p.id}>
-                    {p.sku} · {p.nameEn} ({resolved.unitPrice}
-                    {resolved.isCustom ? ` · ${t.customPricingBadge}` : ''})
+                    {p.sku} · {p.nameEn} ({formatMoney(resolved.unitPrice, order.currency)}
+                    {resolved.isCustom ? ` · ${t.customPricingBadge}` : ''}
+                    {resolved.isTiered && resolved.matchedTierLabel
+                      ? ` · ${t.tierMatchedBadge} ${resolved.matchedTierLabel}`
+                      : ''}
+                    )
                   </option>
                 );
               })}
@@ -896,17 +1082,43 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                           const linkedProd = products.find(
                             (p) => p.id === item.productId,
                           );
-                          if (!linkedProd) return null;
-                          const resolved = resolveCustomerProductPrice(
-                            currentCustomer,
-                            linkedProd,
-                          );
-                          if (!resolved.isCustom) return null;
+                          const resolved = linkedProd
+                            ? resolveCustomerProductPricing(
+                                currentCustomer,
+                                linkedProd,
+                                item.quantity,
+                                order.currency,
+                                effectiveExchangeRate,
+                              )
+                            : null;
+                          const jpyHint =
+                            order.currency !== 'JPY'
+                              ? item.baseUnitPriceJpy ?? resolved?.basePriceJpy
+                              : undefined;
+                          if (
+                            !resolved?.isCustom &&
+                            !resolved?.isTiered &&
+                            jpyHint === undefined
+                          ) {
+                            return null;
+                          }
                           return (
-                            <div className="mt-1 text-right">
-                              <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 rounded">
-                                {t.customPricingBadge}
-                              </span>
+                            <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
+                              {jpyHint !== undefined && (
+                                <span className="text-[10px] font-mono-tabular text-slate-400">
+                                  ¥{Math.round(jpyHint).toLocaleString()}
+                                </span>
+                              )}
+                              {resolved?.isCustom && (
+                                <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 rounded">
+                                  {t.customPricingBadge}
+                                </span>
+                              )}
+                              {resolved?.isTiered && resolved.matchedTierLabel && (
+                                <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-800 border border-blue-200 rounded">
+                                  {t.tierMatchedBadge} {resolved.matchedTierLabel}
+                                </span>
+                              )}
                             </div>
                           );
                         })()}
@@ -982,6 +1194,81 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Carton -> Pallet -> Empty Carton Auto-Conversion Rule Strip */}
+        {(() => {
+          const autoPack = calculatePalletPacking(summary.totalCartons, {
+            cartonsPerLayer: effectiveCartonsPerLayer,
+          });
+          const curPallets = order.palletCount ?? autoPack.palletCount;
+          const curEmpty = order.emptyCartons ?? autoPack.emptyCartons;
+          return (
+            <div
+              data-testid="pallet-packing-rule-bar"
+              className="px-5 py-3 bg-blue-50/50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs"
+            >
+              <div className="space-y-0.5">
+                <div className="font-semibold text-slate-800">
+                  {t.packingAutoCardTitle} ·{' '}
+                  <span className="font-mono-tabular text-blue-800">
+                    {curPallets} Pallets / {summary.totalCartons} Cartons / {curEmpty} Empty
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  {autoPack.usesPallet
+                    ? t.packingRulePallet
+                        .replace('{cartons}', String(summary.totalCartons))
+                        .replace('{pallets}', String(autoPack.palletCount))
+                        .replace('{empty}', String(autoPack.emptyCartons))
+                    : t.packingRuleDirect}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <label
+                  htmlFor="order-cartons-per-layer"
+                  className="text-[11px] font-medium text-slate-600"
+                >
+                  {t.cartonsPerLayerLabel}
+                </label>
+                <input
+                  id="order-cartons-per-layer"
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={effectiveCartonsPerLayer}
+                  onChange={(e) => {
+                    const nextLayer = Math.max(
+                      1,
+                      Math.round(Number(e.target.value) || 12),
+                    );
+                    const nextPack = calculatePalletPacking(summary.totalCartons, {
+                      cartonsPerLayer: nextLayer,
+                    });
+                    updateOrder({
+                      cartonsPerLayer: nextLayer,
+                      palletCount: nextPack.palletCount,
+                      emptyCartons: nextPack.emptyCartons,
+                    });
+                  }}
+                  className="w-16 h-7 px-2 text-right font-mono-tabular text-xs bg-white border border-slate-300 rounded"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateOrder({
+                      palletCount: autoPack.palletCount,
+                      emptyCartons: autoPack.emptyCartons,
+                    })
+                  }
+                  className="px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50 whitespace-nowrap"
+                >
+                  {t.btnAutoCalcPacking}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       {/* Section 3: Shipping Management + Linked Auto-Calculation Split */}

@@ -24,6 +24,7 @@ import { DOC_TEXT, type DocDictionary } from '../i18n/docTranslations';
 import {
   calculateOrderSummary,
   formatMoney,
+  resolveEffectiveExchangeRate,
 } from '../utils/exportCalculations';
 import {
   buildPackingListDisplayRows,
@@ -34,7 +35,7 @@ import {
   formatDocumentDate,
   resolveItemSpecs,
 } from '../utils/documentHelpers';
-import { exportOrdersToExcel } from '../utils/importExportUtils';
+import { exportDocumentToExcel } from '../utils/importExportUtils';
 
 interface DocumentGeneratorProps {
   order: ExportOrder | undefined;
@@ -280,11 +281,14 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
             <button
               type="button"
               onClick={() =>
-                exportOrdersToExcel(
-                  [order],
-                  customer ? [customer] : [],
-                  order.invoiceNo || 'hardlock-order',
-                )
+                exportDocumentToExcel(order, {
+                  customer,
+                  billToCustomer: resolvedBillTo,
+                  supplier,
+                  bank,
+                  products,
+                  docLang,
+                })
               }
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors whitespace-nowrap"
             >
@@ -396,6 +400,7 @@ const HardlockLetterhead: React.FC<{ supplier: Supplier | undefined }> = ({
     <div className="flex justify-between items-start gap-4 pt-1 text-[11px] leading-[1.35] text-black">
       <div className="whitespace-pre-line">
         {supplier?.address || '1-6-24, Kawamata, Higashi Osaka\nOsaka, Japan 577-0063'}
+        {supplier?.taxOrExporterId ? `\nTax ID : ${supplier.taxOrExporterId}` : ''}
       </div>
       <div className="text-right shrink-0 tabular-nums">
         <div>Tel : {supplier?.phone || '81-6-6784-1131'}</div>
@@ -420,6 +425,8 @@ const PartyAddressBlock: React.FC<{
     {party?.country && <div>{party.country}</div>}
     {party?.contactName && <div>Attn : {party.contactName}</div>}
     {party?.phone && <div>Mobile : {party.phone}</div>}
+    {party?.fax && <div>Fax : {party.fax}</div>}
+    {party?.taxOrImporterId && <div>Tax ID : {party.taxOrImporterId}</div>}
   </div>
 );
 
@@ -598,6 +605,12 @@ const InvoiceSheet: React.FC<
         <div className="text-right text-[10.5px] font-bold leading-tight">
           <div className="italic">*Seller → Buyer transaction value only</div>
           <div>*Currency : {formatCurrencyLabel(order.currency)}</div>
+          {order.currency !== 'JPY' && (
+            <div>
+              *Exchange Rate : 1 {order.currency} ={' '}
+              {resolveEffectiveExchangeRate(order.currency, order.exchangeRate)} JPY
+            </div>
+          )}
         </div>
       </div>
 

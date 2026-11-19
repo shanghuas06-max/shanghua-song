@@ -233,6 +233,25 @@ export interface UiDictionary {
   customPricingBadge: string;
   customPricingEmpty: string;
   btnExportExcel: string;
+  lblTaxOrIdOptional: string;
+  lblFaxOptional: string;
+  exchangeRateLabel: string;
+  exchangeRateHint: string;
+  productCurrencyLabel: string;
+  tieredPricingTitle: string;
+  tieredPricingHint: string;
+  tierMinQty: string;
+  tierMaxQty: string;
+  tierUnitPrice: string;
+  tierAddBtn: string;
+  tierUnlimited: string;
+  tierMatchedBadge: string;
+  packingAutoCardTitle: string;
+  packingRuleDirect: string;
+  packingRulePallet: string;
+  cartonsPerLayerLabel: string;
+  btnAutoCalcPacking: string;
+  jpyBaseUnitLabel: string;
 }
 
 export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
@@ -474,6 +493,25 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     customPricingBadge: '专属价',
     customPricingEmpty: '暂未绑定专属报价，订单将默认采用产品库基础单价。',
     btnExportExcel: '导出为 Excel',
+    lblTaxOrIdOptional: '税号 / 进口商代码 (备填)',
+    lblFaxOptional: '传真 Fax (备填)',
+    exchangeRateLabel: '汇率 (Exchange Rate)',
+    exchangeRateHint: '1 {cur} = {rate} JPY（产品均以日元计价自动换算）',
+    productCurrencyLabel: '计价币种 (默认 JPY)',
+    tieredPricingTitle: '数量阶梯定价 (JPY)',
+    tieredPricingHint: '设置不同订购数量区间对应的日元单价；留空上限表示以上（≥ 最小数量）。',
+    tierMinQty: '最小数量 ≥',
+    tierMaxQty: '最大数量 ≤ (空=不限)',
+    tierUnitPrice: '阶梯单价 (JPY)',
+    tierAddBtn: '添加阶梯',
+    tierUnlimited: '以上',
+    tierMatchedBadge: '阶梯价',
+    packingAutoCardTitle: '箱单与托盘自动换算规则',
+    packingRuleDirect: '≤ 12 箱：直接使用纸箱包装，无需托盘（0 托盘 · 0 空箱）',
+    packingRulePallet: '> 12 箱：每托最多 60 箱；不足一整层部分自动用空箱补足（当前 {cartons} 箱 → {pallets} 托盘 + {empty} 空箱）',
+    cartonsPerLayerLabel: '每层箱数',
+    btnAutoCalcPacking: '按规则重新换算托盘与空箱',
+    jpyBaseUnitLabel: '日元基准价',
   },
   ja: {
     brandTitle: 'HARDLOCK ERP',
@@ -713,6 +751,25 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     customPricingBadge: '専用単価',
     customPricingEmpty: '専用単価は未設定です（製品マスタの標準単価が適用されます）。',
     btnExportExcel: 'Excel 出力',
+    lblTaxOrIdOptional: '税番号 / 輸入者コード (任意)',
+    lblFaxOptional: 'FAX番号 (任意)',
+    exchangeRateLabel: '為替レート (Exchange Rate)',
+    exchangeRateHint: '1 {cur} = {rate} JPY（製品JPY基準単価から自動換算）',
+    productCurrencyLabel: '基準通貨 (既定 JPY)',
+    tieredPricingTitle: '数量別段階単価 (JPY)',
+    tieredPricingHint: '数量範囲ごとのJPY単価を設定します（上限空欄＝以上）。',
+    tierMinQty: '最小数量 ≥',
+    tierMaxQty: '最大数量 ≤ (空=上限なし)',
+    tierUnitPrice: '段階単価 (JPY)',
+    tierAddBtn: '段階を追加',
+    tierUnlimited: '以上',
+    tierMatchedBadge: '段階単価',
+    packingAutoCardTitle: 'カートン・パレット自動換算ルール',
+    packingRuleDirect: '12箱以下：パレット不使用（0 パレット · 空箱 0）',
+    packingRulePallet: '12箱超：1パレット最大60箱・最上段の端数は空箱補充（現在 {cartons}箱 → {pallets}パレット + 空箱{empty}）',
+    cartonsPerLayerLabel: '1段あたり箱数',
+    btnAutoCalcPacking: 'ルールに基づき再計算',
+    jpyBaseUnitLabel: 'JPY基準単価',
   },
   en: {
     brandTitle: 'HARDLOCK ERP',
@@ -952,5 +1009,24 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     customPricingBadge: 'Custom Price',
     customPricingEmpty: 'No custom prices configured. Base catalog unit prices apply by default.',
     btnExportExcel: 'Export to Excel',
+    lblTaxOrIdOptional: 'Tax / Importer ID (Optional)',
+    lblFaxOptional: 'Fax (Optional)',
+    exchangeRateLabel: 'Exchange Rate',
+    exchangeRateHint: '1 {cur} = {rate} JPY (auto-converted from JPY base pricing)',
+    productCurrencyLabel: 'Base Currency (Default JPY)',
+    tieredPricingTitle: 'Quantity Tiered Pricing (JPY)',
+    tieredPricingHint: 'Define unit prices per quantity range. Leave max blank for open-ended tiers.',
+    tierMinQty: 'Min Qty ≥',
+    tierMaxQty: 'Max Qty ≤ (blank=∞)',
+    tierUnitPrice: 'Tier Price (JPY)',
+    tierAddBtn: 'Add Tier',
+    tierUnlimited: '+',
+    tierMatchedBadge: 'Tier',
+    packingAutoCardTitle: 'Carton & Pallet Auto-Conversion',
+    packingRuleDirect: '≤ 12 cartons: Direct carton packing without pallets (0 pallets · 0 empty)',
+    packingRulePallet: '> 12 cartons: Max 60/pallet; incomplete top layer filled with empty cartons ({cartons} ctns → {pallets} pallets + {empty} empty)',
+    cartonsPerLayerLabel: 'Cartons / Layer',
+    btnAutoCalcPacking: 'Recalculate Pallets & Empty',
+    jpyBaseUnitLabel: 'JPY Base',
   },
 };

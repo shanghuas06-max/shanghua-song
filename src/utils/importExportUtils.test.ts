@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { createInitialErpState } from '../data/seedData';
 import {
   applyCustomerPricingToItems,
+  buildFormalDocumentWorkbook,
   buildOrderExcelRows,
   buildOrdersWorkbook,
   buildProductImportTemplateCsv,
@@ -11,6 +12,7 @@ import {
   parseCsvProductsText,
   parseExcelProductsBuffer,
   resolveCustomerProductPrice,
+  resolveCustomerProductPricing,
 } from './importExportUtils';
 
 test('resolveCustomerProductPrice uses custom price when bound and falls back to base unitPrice', () => {
@@ -67,7 +69,8 @@ test('parseCsvProductsText parses UTF-8 CSV template and updates matching SKU or
   assert.equal(res.errors.length, 0);
   assert.equal(res.products.length, 2);
   assert.equal(res.products[0].sku, 'HLN-R10C-4CR');
-  assert.equal(res.products[0].unitPrice, 1.31);
+  assert.equal(res.products[0].unitPrice, 195);
+  assert.equal(res.products[0].currency, 'JPY');
   assert.equal(res.products[1].surfaceFinish, 'MP');
 });
 
@@ -153,3 +156,100 @@ test('buildOrdersWorkbook produces Excel workbook with required Chinese headers 
   assert.equal(parsedRows[0]['订单号'], seed.orders[0].invoiceNo);
   assert.equal(parsedRows[0]['客户名称'], rows[0].客户名称);
 });
+
+test('resolveCustomerProductPricing enforces quantity tier precedence and converts JPY base prices by exchangeRate', () => {
+  const seed = createInitialErpState();
+  const prod = {
+    ...seed.products[0],
+    unitPrice: 480,
+    currency: 'JPY' as const,
+    tieredPrices: [
+      { minQty: 1, maxQty: 999, unitPrice: 480 },
+      { minQty: 1000, maxQty: 4999, unitPrice: 450 },
+      { minQty: 5000, maxQty: null, unitPrice: 420 },
+    ],
+  };
+
+  // Product tier matching + USD conversion at 1 USD = 150 JPY
+  const rSmallUsd = resolveCustomerProductPricing(undefined, prod, 500, 'USD', 150);
+  assert.equal(rSmallUsd.basePriceJpy, 480);
+  assert.equal(rSmallUsd.unitPrice, 3.2);
+  assert.equal(rSmallUsd.source, 'product_tier');
+  assert.equal(rSmallUsd.matchedTierLabel, '1-999');
+
+  const rLargeUsd = resolveCustomerProductPricing(undefined, prod, 6000, 'USD', 150);
+  assert.equal(rLargeUsd.basePriceJpy, 420);
+  assert.equal(rLargeUsd.unitPrice, 2.8);
+  assert.equal(rLargeUsd.matchedTierLabel, '5000+');
+
+  // Customer tiered override beats product tier
+  const vipCust = {
+    ...seed.customers[0],
+    customPrices: [
+      {
+        productId: prod.id,
+        unitPrice: 400,
+        tieredPrices: [{ minQty: 2000, maxQty: null, unitPrice: 360 }],
+      },
+    ],
+  };
+  const rVipTier = resolveCustomerProductPricing(vipCust, prod, 3000, 'CNY', 20);
+  assert.equal(rVipTier.source, 'customer_tier');
+  assert.equal(rVipTier.basePriceJpy, 360);
+  assert.equal(rVipTier.unitPrice, 18);
+  assert.equal(rVipTier.isCustom, true);
+
+  // Customer flat custom fallback when quantity does not match customer tier
+  const rVipFlat = resolveCustomerProductPricing(vipCust, prod, 500, 'CNY', 20);
+  assert.equal(rVipFlat.source, 'customer_flat');
+  assert.equal(rVipFlat.basePriceJpy, 400);
+  assert.equal(rVipFlat.unitPrice, 20);
+});
+
+test('buildFormalDocumentWorkbook creates formal 2-sheet INVOICE and PACKING LIST workbook with Fax, Tax ID, Exchange Rate, and merges', () => {
+  const seed = createInitialErpState();
+  const order = {
+    ...seed.orders[0],
+    currency: 'USD' as const,
+    exchangeRate: 152,
+    palletCount: 1,
+    emptyCartons: 11,
+  };
+  const customer = {
+    ...seed.customers.find((c) => c.id === order.customerId)!,
+    fax: '+49-711-000-999',
+    taxOrImporterId: 'DE-TAX-888999',
+  };
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  const wb = buildFormalDocumentWorkbook(order, {
+    customer,
+    billToCustomer: customer,
+    supplier,
+    bank,
+    products: seed.products,
+    docLang: 'en',
+  });
+
+  assert.deepEqual(wb.SheetNames, ['INVOICE', 'PACKING LIST']);
+  const bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+  const parsed = XLSX.read(bytes, { type: 'array' });
+
+  const invText = XLSX.utils.sheet_to_csv(parsed.Sheets['INVOICE']);
+  assert.match(invText, /HARDLOCK Industry Co\., Ltd\./);
+  assert.match(invText, /INVOICE/);
+  assert.match(invText, /BILL TO :/);
+  assert.match(invText, /Fax : \+49-711-000-999/);
+  assert.match(invText, /Tax ID : DE-TAX-888999/);
+  assert.match(invText, /\*Exchange Rate : 1 USD = 152 JPY/);
+  assert.match(invText, /1 pallets \(.*cartons total \+ 11 empty carton\)/);
+  assert.match(invText, /Bank Information/);
+
+  const plText = XLSX.utils.sheet_to_csv(parsed.Sheets['PACKING LIST']);
+  assert.match(plText, /PACKING LIST/);
+  assert.match(plText, /DELIVER TO :/);
+  assert.match(plText, /Pallet No\.,Ctn\. No\.,Item No\.,Type/);
+  assert.ok((parsed.Sheets['PACKING LIST']['!merges']?.length ?? 0) > 5);
+});
+

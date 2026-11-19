@@ -28,6 +28,7 @@ import type {
   UiLanguage,
 } from '../types/erp';
 import {
+  clampCurrency,
   BLUEPRINT_LIMITS,
   clampDocLang,
   clampStr,
@@ -40,6 +41,7 @@ import {
   sanitizeProductPayload,
   sanitizeSupplierPayload,
 } from './firestoreSanitizers';
+import { resolveEffectiveExchangeRate } from './exportCalculations';
 
 export interface UserWorkspaceProfile {
   uid: string;
@@ -75,16 +77,30 @@ function userSubColQuery(uid: string, sub: string) {
 }
 
 const initInFlightByUid = new Map<string, Promise<boolean>>();
+const docWriteQueues = new Map<string, Promise<void>>();
+const knownServerDocPaths = new Set<string>();
+
+function enqueueDocWrite(path: string, op: () => Promise<void>): Promise<void> {
+  const prev = docWriteQueues.get(path) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(op);
+  docWriteQueues.set(path, next);
+  return next.finally(() => {
+    if (docWriteQueues.get(path) === next) {
+      docWriteQueues.delete(path);
+    }
+  });
+}
 
 async function seedCollectionsForUser(
   uid: string,
   payload: ErpDataPayload,
   profileDocData?: Record<string, unknown>,
 ): Promise<void> {
-  const ops: { ref: ReturnType<typeof userSubDocRef>; data: Record<string, unknown> }[] = [];
+  const ops: { path: string; ref: ReturnType<typeof userSubDocRef>; data: Record<string, unknown> }[] = [];
 
   if (profileDocData) {
     ops.push({
+      path: `users/${uid}`,
       ref: userDocRef(uid),
       data: profileDocData,
     });
@@ -93,6 +109,7 @@ async function seedCollectionsForUser(
   for (const c of payload.customers) {
     const clean = sanitizeCustomerPayload(c, uid);
     ops.push({
+      path: `users/${uid}/customers/${clean.id}`,
       ref: userSubDocRef(uid, 'customers', clean.id),
       data: { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
     });
@@ -100,6 +117,7 @@ async function seedCollectionsForUser(
   for (const s of payload.suppliers) {
     const clean = sanitizeSupplierPayload(s, uid);
     ops.push({
+      path: `users/${uid}/suppliers/${clean.id}`,
       ref: userSubDocRef(uid, 'suppliers', clean.id),
       data: { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
     });
@@ -107,6 +125,7 @@ async function seedCollectionsForUser(
   for (const l of payload.logisticsProviders) {
     const clean = sanitizeLogisticsPayload(l, uid);
     ops.push({
+      path: `users/${uid}/logisticsProviders/${clean.id}`,
       ref: userSubDocRef(uid, 'logisticsProviders', clean.id),
       data: { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
     });
@@ -114,6 +133,7 @@ async function seedCollectionsForUser(
   for (const b of payload.bankAccounts) {
     const clean = sanitizeBankPayload(b, uid);
     ops.push({
+      path: `users/${uid}/bankAccounts/${clean.id}`,
       ref: userSubDocRef(uid, 'bankAccounts', clean.id),
       data: { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
     });
@@ -121,6 +141,7 @@ async function seedCollectionsForUser(
   for (const p of payload.products) {
     const clean = sanitizeProductPayload(p, uid);
     ops.push({
+      path: `users/${uid}/products/${clean.id}`,
       ref: userSubDocRef(uid, 'products', clean.id),
       data: { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
     });
@@ -128,6 +149,7 @@ async function seedCollectionsForUser(
   for (const o of payload.orders) {
     const clean = sanitizeOrderPayload(o, uid);
     ops.push({
+      path: `users/${uid}/orders/${clean.id}`,
       ref: userSubDocRef(uid, 'orders', clean.id),
       data: { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
     });
@@ -135,6 +157,7 @@ async function seedCollectionsForUser(
   for (const log of payload.auditLogs.slice(0, 40)) {
     const clean = sanitizeAuditLogPayload(log, uid);
     ops.push({
+      path: `users/${uid}/auditLogs/${clean.id}`,
       ref: userSubDocRef(uid, 'auditLogs', clean.id),
       data: { ...clean, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
     });
@@ -142,11 +165,15 @@ async function seedCollectionsForUser(
 
   // Commit in chunks under Firestore 500-op batch ceiling
   for (let i = 0; i < ops.length; i += 400) {
+    const chunk = ops.slice(i, i + 400);
     const batch = writeBatch(db);
-    for (const item of ops.slice(i, i + 400)) {
+    for (const item of chunk) {
       batch.set(item.ref, item.data);
     }
     await batch.commit();
+    for (const item of chunk) {
+      knownServerDocPaths.add(item.path);
+    }
   }
 }
 
@@ -164,6 +191,7 @@ export async function ensureUserWorkspaceInitialized(
     try {
       const snap = await getDoc(userDocRef(user.uid));
       if (snap.exists()) {
+        knownServerDocPaths.add(path);
         return false;
       }
 
@@ -240,6 +268,7 @@ export function subscribeUserWorkspace(
       userDocRef(uid),
       (snap) => {
         if (snap.exists()) {
+          knownServerDocPaths.add(`users/${uid}`);
           const d = snap.data();
           state.profile = {
             uid: String(d.uid ?? uid),
@@ -262,9 +291,12 @@ export function subscribeUserWorkspace(
       userSubColQuery(uid, 'customers'),
       (snap) => {
         state.customers = snap.docs.map((d) => {
+          knownServerDocPaths.add(`users/${uid}/customers/${d.id}`);
           const data = d.data() as Customer;
           return {
             ...data,
+            fax: String(data.fax ?? ''),
+            taxOrImporterId: String(data.taxOrImporterId ?? ''),
             customPrices: Array.isArray(data.customPrices) ? data.customPrices : [],
           };
         });
@@ -278,7 +310,10 @@ export function subscribeUserWorkspace(
     onSnapshot(
       userSubColQuery(uid, 'suppliers'),
       (snap) => {
-        state.suppliers = snap.docs.map((d) => d.data() as Supplier);
+        state.suppliers = snap.docs.map((d) => {
+          knownServerDocPaths.add(`users/${uid}/suppliers/${d.id}`);
+          return d.data() as Supplier;
+        });
         markReady('suppliers');
       },
       (err) => reportError(err, OperationType.LIST, `users/${uid}/suppliers`),
@@ -289,7 +324,10 @@ export function subscribeUserWorkspace(
     onSnapshot(
       userSubColQuery(uid, 'logisticsProviders'),
       (snap) => {
-        state.logisticsProviders = snap.docs.map((d) => d.data() as LogisticsProvider);
+        state.logisticsProviders = snap.docs.map((d) => {
+          knownServerDocPaths.add(`users/${uid}/logisticsProviders/${d.id}`);
+          return d.data() as LogisticsProvider;
+        });
         markReady('logisticsProviders');
       },
       (err) => reportError(err, OperationType.LIST, `users/${uid}/logisticsProviders`),
@@ -300,7 +338,10 @@ export function subscribeUserWorkspace(
     onSnapshot(
       userSubColQuery(uid, 'bankAccounts'),
       (snap) => {
-        state.bankAccounts = snap.docs.map((d) => d.data() as BankAccount);
+        state.bankAccounts = snap.docs.map((d) => {
+          knownServerDocPaths.add(`users/${uid}/bankAccounts/${d.id}`);
+          return d.data() as BankAccount;
+        });
         markReady('bankAccounts');
       },
       (err) => reportError(err, OperationType.LIST, `users/${uid}/bankAccounts`),
@@ -311,7 +352,15 @@ export function subscribeUserWorkspace(
     onSnapshot(
       userSubColQuery(uid, 'products'),
       (snap) => {
-        state.products = snap.docs.map((d) => d.data() as Product);
+        state.products = snap.docs.map((d) => {
+          knownServerDocPaths.add(`users/${uid}/products/${d.id}`);
+          const data = d.data() as Product;
+          return {
+            ...data,
+            currency: clampCurrency(data.currency, 'JPY'),
+            tieredPrices: Array.isArray(data.tieredPrices) ? data.tieredPrices : [],
+          };
+        });
         markReady('products');
       },
       (err) => reportError(err, OperationType.LIST, `users/${uid}/products`),
@@ -324,9 +373,17 @@ export function subscribeUserWorkspace(
       (snap) => {
         state.orders = snap.docs
           .map((d) => {
+            knownServerDocPaths.add(`users/${uid}/orders/${d.id}`);
             const raw = d.data() as Record<string, unknown>;
+            const currency = clampCurrency(raw.currency, 'USD');
             return {
               ...(raw as unknown as ExportOrder),
+              currency,
+              exchangeRate: resolveEffectiveExchangeRate(
+                currency,
+                raw.exchangeRate as number | undefined,
+              ),
+              cartonsPerLayer: Math.max(1, Math.round(Number(raw.cartonsPerLayer) || 12)),
               createdAt: String(raw.orderCreatedAt ?? raw.createdAt ?? ''),
               updatedAt: String(raw.orderUpdatedAt ?? raw.updatedAt ?? ''),
             };
@@ -343,7 +400,10 @@ export function subscribeUserWorkspace(
       userSubColQuery(uid, 'auditLogs'),
       (snap) => {
         state.auditLogs = snap.docs
-          .map((d) => d.data() as AuditLogEntry)
+          .map((d) => {
+            knownServerDocPaths.add(`users/${uid}/auditLogs/${d.id}`);
+            return d.data() as AuditLogEntry;
+          })
           .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
         markReady('auditLogs');
       },
@@ -370,39 +430,43 @@ export async function updateWorkspacePrefs(
   prefs: { uiLang?: UiLanguage; docLang?: DocLanguage; activeOrderId?: string },
 ): Promise<void> {
   const path = `users/${uid}`;
-  try {
-    const updatePayload: Record<string, unknown> = { updatedAt: serverTimestamp() };
-    if (prefs.uiLang) updatePayload.uiLang = clampUiLang(prefs.uiLang);
-    if (prefs.docLang) updatePayload.docLang = clampDocLang(prefs.docLang);
-    if (prefs.activeOrderId !== undefined) {
-      updatePayload.activeOrderId = clampStr(prefs.activeOrderId, BLUEPRINT_LIMITS.ID_MAX);
-    }
+  return enqueueDocWrite(path, async () => {
     try {
-      await updateDoc(userDocRef(uid), updatePayload);
-    } catch (updateErr) {
-      if (!isFirestoreNotFound(updateErr)) throw updateErr;
-      const currentUser = auth.currentUser;
-      await setDoc(userDocRef(uid), {
-        uid,
-        email: clampStr(
-          currentUser?.email ?? `${uid}@local`,
-          BLUEPRINT_LIMITS.MEDIUM_MAX,
-        ),
-        displayName: clampStr(
-          currentUser?.displayName ?? currentUser?.email?.split('@')[0] ?? 'Operator',
-          BLUEPRINT_LIMITS.MEDIUM_MAX,
-        ),
-        companyName: 'HARDLOCK Export Workspace',
-        uiLang: clampUiLang(prefs.uiLang, 'zh'),
-        docLang: clampDocLang(prefs.docLang, 'en'),
-        activeOrderId: clampStr(prefs.activeOrderId ?? '', BLUEPRINT_LIMITS.ID_MAX),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      const updatePayload: Record<string, unknown> = { updatedAt: serverTimestamp() };
+      if (prefs.uiLang) updatePayload.uiLang = clampUiLang(prefs.uiLang);
+      if (prefs.docLang) updatePayload.docLang = clampDocLang(prefs.docLang);
+      if (prefs.activeOrderId !== undefined) {
+        updatePayload.activeOrderId = clampStr(prefs.activeOrderId, BLUEPRINT_LIMITS.ID_MAX);
+      }
+      try {
+        await updateDoc(userDocRef(uid), updatePayload);
+        knownServerDocPaths.add(path);
+      } catch (updateErr) {
+        if (!isFirestoreNotFound(updateErr)) throw updateErr;
+        const currentUser = auth.currentUser;
+        await setDoc(userDocRef(uid), {
+          uid,
+          email: clampStr(
+            currentUser?.email ?? `${uid}@local`,
+            BLUEPRINT_LIMITS.MEDIUM_MAX,
+          ),
+          displayName: clampStr(
+            currentUser?.displayName ?? currentUser?.email?.split('@')[0] ?? 'Operator',
+            BLUEPRINT_LIMITS.MEDIUM_MAX,
+          ),
+          companyName: 'HARDLOCK Export Workspace',
+          uiLang: clampUiLang(prefs.uiLang, 'zh'),
+          docLang: clampDocLang(prefs.docLang, 'en'),
+          activeOrderId: clampStr(prefs.activeOrderId ?? '', BLUEPRINT_LIMITS.ID_MAX),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        knownServerDocPaths.add(path);
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, path);
     }
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
-  }
+  });
 }
 
 async function upsertSubDoc(
@@ -413,34 +477,42 @@ async function upsertSubDoc(
   existsInMemory: boolean,
 ): Promise<void> {
   const path = `users/${uid}/${sub}/${id}`;
-  try {
-    const ref = userSubDocRef(uid, sub, id);
-    if (existsInMemory) {
-      const { id: _i, ownerId: _o, ...mutableFields } = cleanPayload;
-      try {
-        await updateDoc(ref, { ...mutableFields, updatedAt: serverTimestamp() });
-        return;
-      } catch (updateErr) {
-        if (!isFirestoreNotFound(updateErr)) throw updateErr;
+  return enqueueDocWrite(path, async () => {
+    try {
+      const ref = userSubDocRef(uid, sub, id);
+      const shouldTryUpdate = existsInMemory || knownServerDocPaths.has(path);
+      if (shouldTryUpdate) {
+        const { id: _i, ownerId: _o, ...mutableFields } = cleanPayload;
+        try {
+          await updateDoc(ref, { ...mutableFields, updatedAt: serverTimestamp() });
+          knownServerDocPaths.add(path);
+          return;
+        } catch (updateErr) {
+          if (!isFirestoreNotFound(updateErr)) throw updateErr;
+        }
       }
+      await setDoc(ref, {
+        ...cleanPayload,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      knownServerDocPaths.add(path);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
     }
-    await setDoc(ref, {
-      ...cleanPayload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  });
 }
 
 async function deleteSubDoc(uid: string, sub: string, id: string): Promise<void> {
   const path = `users/${uid}/${sub}/${id}`;
-  try {
-    await deleteDoc(userSubDocRef(uid, sub, id));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
-  }
+  return enqueueDocWrite(path, async () => {
+    try {
+      await deleteDoc(userSubDocRef(uid, sub, id));
+      knownServerDocPaths.delete(path);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  });
 }
 
 export const cloudErpOps = {
@@ -483,10 +555,12 @@ export const cloudErpOps = {
       for (let i = 0; i < products.length; i += 400) {
         const batch = writeBatch(db);
         const chunk = products.slice(i, i + 400);
+        const writtenPaths: string[] = [];
         for (const p of chunk) {
           const clean = sanitizeProductPayload(p, uid);
+          const docPath = `users/${uid}/products/${clean.id}`;
           const ref = userSubDocRef(uid, 'products', clean.id);
-          if (existingIds.has(clean.id)) {
+          if (existingIds.has(clean.id) || knownServerDocPaths.has(docPath)) {
             const { id: _i, ownerId: _o, ...mutableFields } = clean;
             batch.update(ref, { ...mutableFields, updatedAt: serverTimestamp() });
           } else {
@@ -496,8 +570,10 @@ export const cloudErpOps = {
               updatedAt: serverTimestamp(),
             });
           }
+          writtenPaths.push(docPath);
         }
         await batch.commit();
+        writtenPaths.forEach((docPath) => knownServerDocPaths.add(docPath));
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
@@ -533,6 +609,7 @@ export const cloudErpOps = {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+      knownServerDocPaths.add(path);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, path);
     }
@@ -554,15 +631,22 @@ export const cloudErpOps = {
     ];
     try {
       // Remove existing docs across all 7 subcollections in chunks
-      const deleteRefs: ReturnType<typeof userSubDocRef>[] = [];
+      const deleteEntries: { path: string; ref: ReturnType<typeof userSubDocRef> }[] = [];
       for (const sub of subCollections) {
         const snap = await getDocs(userSubColQuery(uid, sub));
-        snap.docs.forEach((d) => deleteRefs.push(userSubDocRef(uid, sub, d.id)));
+        snap.docs.forEach((d) =>
+          deleteEntries.push({
+            path: `users/${uid}/${sub}/${d.id}`,
+            ref: userSubDocRef(uid, sub, d.id),
+          }),
+        );
       }
-      for (let i = 0; i < deleteRefs.length; i += 400) {
+      for (let i = 0; i < deleteEntries.length; i += 400) {
+        const chunk = deleteEntries.slice(i, i + 400);
         const batch = writeBatch(db);
-        deleteRefs.slice(i, i + 400).forEach((ref) => batch.delete(ref));
+        chunk.forEach((entry) => batch.delete(entry.ref));
         await batch.commit();
+        chunk.forEach((entry) => knownServerDocPaths.delete(entry.path));
       }
 
       // Write restored/reset payload

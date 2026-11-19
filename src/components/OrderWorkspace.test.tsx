@@ -281,3 +281,92 @@ test('OrderWorkspace shows custom-price badge and HistoryBackupManager renders E
   );
   assert.match(historyHtml, /导出为 Excel/);
 });
+
+test('OrderWorkspace renders exchange rate input for non-JPY orders and pallet auto-conversion strip', () => {
+  const seed = createInitialErpState();
+  const usdOrder = {
+    ...seed.orders[0],
+    currency: 'USD' as const,
+    exchangeRate: 150,
+    cartonsPerLayer: 12,
+  };
+  const wsUsdHtml = renderToStaticMarkup(
+    <OrderWorkspace
+      order={usdOrder}
+      customers={seed.customers}
+      suppliers={seed.suppliers}
+      logisticsProviders={seed.logisticsProviders}
+      bankAccounts={seed.bankAccounts}
+      products={seed.products}
+      onChangeOrder={() => {}}
+      onCreateNewOrder={() => {}}
+      onDuplicateOrder={() => {}}
+      onOpenDocuments={() => {}}
+      onOpenHistory={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(wsUsdHtml, /data-testid="exchange-rate-field"/);
+  assert.match(wsUsdHtml, /1 USD = 150 JPY/);
+  assert.match(wsUsdHtml, /data-testid="pallet-packing-rule-bar"/);
+  assert.match(wsUsdHtml, /箱单与托盘自动换算规则/);
+
+  const jpyOrder = {
+    ...usdOrder,
+    currency: 'JPY' as const,
+    exchangeRate: 1,
+  };
+  const wsJpyHtml = renderToStaticMarkup(
+    <OrderWorkspace
+      order={jpyOrder}
+      customers={seed.customers}
+      suppliers={seed.suppliers}
+      logisticsProviders={seed.logisticsProviders}
+      bankAccounts={seed.bankAccounts}
+      products={seed.products}
+      onChangeOrder={() => {}}
+      onCreateNewOrder={() => {}}
+      onDuplicateOrder={() => {}}
+      onOpenDocuments={() => {}}
+      onOpenHistory={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.doesNotMatch(wsJpyHtml, /data-testid="exchange-rate-field"/);
+});
+
+test('DocumentGenerator renders optional Fax, Tax ID, and non-JPY Exchange Rate line', () => {
+  const seed = createInitialErpState();
+  const order = {
+    ...seed.orders[0],
+    currency: 'USD' as const,
+    exchangeRate: 155,
+  };
+  const customer = {
+    ...seed.customers.find((c) => c.id === order.customerId)!,
+    fax: '03-5555-6666',
+    taxOrImporterId: 'TAX-999-001',
+  };
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  const html = renderToStaticMarkup(
+    <DocumentGenerator
+      order={order}
+      customer={customer}
+      billToCustomer={customer}
+      supplier={supplier}
+      bank={bank}
+      logistics={seed.logisticsProviders[0]}
+      products={seed.products}
+      docLang="en"
+      onChangeDocLang={() => {}}
+      onCreateNewOrder={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(html, /Fax : 03-5555-6666/);
+  assert.match(html, /Tax ID : TAX-999-001/);
+  assert.match(html, /\*Exchange Rate : 1 USD = 155 JPY/);
+});
+

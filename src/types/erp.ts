@@ -20,9 +20,16 @@ export type NavSection = 'order' | 'documents' | 'master' | 'history';
 export type MasterTab = 'customers' | 'suppliers' | 'logistics' | 'banks' | 'products';
 export type DocumentTab = 'invoice' | 'packing' | 'casemark' | 'all';
 
+export interface PriceTier {
+  minQty: number;
+  maxQty: number | null;
+  unitPrice: number;
+}
+
 export interface CustomerProductPrice {
   productId: string;
   unitPrice: number;
+  tieredPrices?: PriceTier[];
 }
 
 export interface Customer {
@@ -34,6 +41,8 @@ export interface Customer {
   contactName: string;
   email: string;
   phone: string;
+  fax?: string;
+  taxOrImporterId?: string;
   defaultCurrency: CurrencyCode;
   defaultIncoterm: IncotermCode;
   notifyParty?: string;
@@ -91,6 +100,7 @@ export interface Product {
   unit: string;
   unitPrice: number;
   currency: CurrencyCode;
+  tieredPrices?: PriceTier[];
   unitNetWeightKg: number;
   unitGrossWeightKg: number;
   defaultUnitsPerCarton: number;
@@ -112,6 +122,7 @@ export interface OrderItem {
   quantity: number;
   unit: string;
   unitPrice: number;
+  baseUnitPriceJpy?: number;
   cartons: number;
   unitNetWeightKg: number;
   unitGrossWeightKg: number;
@@ -176,6 +187,7 @@ export interface ExportOrder {
   orderDate: string;
   paymentTerms: string;
   currency: CurrencyCode;
+  exchangeRate?: number;
   supplierId: string;
   customerId: string;
   billToCustomerId?: string;
@@ -183,6 +195,7 @@ export interface ExportOrder {
   itemHeader?: string;
   palletCount?: number;
   emptyCartons?: number;
+  cartonsPerLayer?: number;
   palletVolumeDetails?: string;
   surfaceFootnotes?: string;
   packingRows?: PackingListRow[];
