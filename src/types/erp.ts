@@ -109,6 +109,8 @@ export interface ContractSettings {
   defaultArbitrationClauseEn: string;
   defaultDisclaimerText: string;
   companyStampLabel: string;
+  companyStampImage?: string;
+  signatureImage?: string;
   clauses: ContractClauseItem[];
 }
 
@@ -234,6 +236,7 @@ export interface OrderItem {
   palletNo?: string;
   cartonRange?: string;
   setsPerCarton?: number;
+  sharedCartonGroupId?: string;
 }
 
 export interface PackingListRow {

@@ -37,6 +37,7 @@ export const BLUEPRINT_LIMITS = {
   MAX_DOC_OVERRIDES: 60,
   MAX_TEMPLATES_PER_CUSTOMER: 3,
   MAX_TEMPLATE_BASE64: 450000,
+  MAX_STAMP_SIG_IMAGE: 180000,
   MAX_TEMPLATE_MAPPINGS: 40,
   MAX_CONTRACT_CLAUSES: 20,
   INVOICE_MAX: 100,
@@ -97,6 +98,19 @@ export function clampStr(val: unknown, maxLen: number, fallback = ''): string {
 export function clampNonEmptyStr(val: unknown, maxLen: number, fallback: string): string {
   const str = clampStr(val, maxLen).trim();
   return str.length > 0 ? str : fallback.slice(0, maxLen);
+}
+
+const DATA_IMAGE_REGEX = /^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$/i;
+
+export function sanitizeDataImageUrl(
+  val: unknown,
+  maxLen: number = BLUEPRINT_LIMITS.MAX_STAMP_SIG_IMAGE,
+): string {
+  if (typeof val !== 'string') return '';
+  const trimmed = val.trim();
+  if (!trimmed || trimmed.length > maxLen) return '';
+  if (!DATA_IMAGE_REGEX.test(trimmed)) return '';
+  return trimmed;
 }
 
 export function nonNegNum(val: unknown, fallback = 0): number {
@@ -343,6 +357,8 @@ export function sanitizeContractSettings(
       BLUEPRINT_LIMITS.MEDIUM_MAX,
       defaults.companyStampLabel,
     ),
+    companyStampImage: sanitizeDataImageUrl(raw.companyStampImage),
+    signatureImage: sanitizeDataImageUrl(raw.signatureImage),
     clauses: clauses.length > 0 ? clauses : defaults.clauses,
   };
 }
@@ -471,6 +487,7 @@ export function sanitizeOrderItem(item: OrderItem, idx: number): OrderItem {
     palletNo: clampStr(item.palletNo, BLUEPRINT_LIMITS.SHORT_MAX),
     cartonRange: clampStr(item.cartonRange, BLUEPRINT_LIMITS.SHORT_MAX),
     setsPerCarton: nonNegNum(item.setsPerCarton, 0),
+    sharedCartonGroupId: clampStr(item.sharedCartonGroupId, BLUEPRINT_LIMITS.SHORT_MAX),
   };
 }
 

@@ -1814,7 +1814,7 @@ export function buildFormalDocumentWorkbook(
   packingSheet['!merges'] = plMerges;
   packingSheet['!rows'] = plRowHeights;
   packingSheet['!cols'] = [
-    { wch: 10 },
+    { wch: 11 },
     { wch: 12 },
     { wch: 9 },
     { wch: 18 },
@@ -1873,6 +1873,19 @@ export function buildFormalDocumentWorkbook(
       alignment: { vertical: 'center' },
     });
     for (let r = plDataStartRow; r <= plDataEndRow; r++) {
+      const dRow = displayRows[r - plDataStartRow];
+      if (dRow?.isSubRowInSameCtn) {
+        for (let c = 2; c <= 10; c++) {
+          applyCellStyle(packingSheet, r, c, {
+            border: {
+              top: DOTTED_BLACK,
+              bottom: THIN_BLACK,
+              left: THIN_BLACK,
+              right: THIN_BLACK,
+            },
+          });
+        }
+      }
       applyCellStyle(packingSheet, r, 0, { alignment: { horizontal: 'center', vertical: 'center' } });
       applyCellStyle(packingSheet, r, 1, { alignment: { horizontal: 'center', vertical: 'center' } });
       applyCellStyle(packingSheet, r, 2, { alignment: { horizontal: 'center' } });

@@ -550,4 +550,108 @@ test('OrderWorkspace renders pallet count input with weight/CBM breakdown and Do
   assert.match(docPackingHtml, /data-editable-key="pl\.cartonSize"/);
 });
 
+test('OrderWorkspace renders half-carton controls & savings hint, SystemSettingsPanel renders image upload inputs, and DocumentGenerator renders uploaded stamp & signature <img>', () => {
+  const TINY_PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const seed = createInitialErpState();
+  const baseOrder = seed.orders[0];
+  const order = {
+    ...baseOrder,
+    items: [
+      {
+        ...baseOrder.items[0],
+        id: 'half-ui-1',
+        quantity: 150,
+        cartons: 1,
+        setsPerCarton: 300,
+        palletNo: '',
+        cartonRange: '',
+        sharedCartonGroupId: 'mix-1',
+      },
+      {
+        ...baseOrder.items[1],
+        id: 'half-ui-2',
+        quantity: 80,
+        cartons: 1,
+        setsPerCarton: 160,
+        palletNo: '',
+        cartonRange: '',
+        sharedCartonGroupId: 'mix-1',
+      },
+    ],
+    docSpecialFields: {
+      showCompanyStamp: true,
+      showSignature: true,
+      showDisclaimer: false,
+      disclaimerText: '',
+      customNote: '',
+    },
+  };
+  const customer = seed.customers.find((c) => c.id === order.customerId)!;
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+  const customSettings = {
+    ...createDefaultContractSettings(),
+    companyStampImage: TINY_PNG,
+    signatureImage: TINY_PNG,
+  };
+
+  const wsHtml = renderToStaticMarkup(
+    <OrderWorkspace
+      order={order}
+      customers={seed.customers}
+      suppliers={seed.suppliers}
+      logisticsProviders={seed.logisticsProviders}
+      bankAccounts={seed.bankAccounts}
+      products={seed.products}
+      onChangeOrder={() => {}}
+      onCreateNewOrder={() => {}}
+      onDuplicateOrder={() => {}}
+      onOpenDocuments={() => {}}
+      onOpenHistory={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(wsHtml, /data-testid="auto-consolidate-btn"/);
+  assert.match(wsHtml, /data-testid="half-carton-badge-0"/);
+  assert.match(wsHtml, /data-testid="item-shared-group-0"/);
+  assert.match(wsHtml, /data-testid="consolidated-savings-hint"/);
+
+  const settingsHtml = renderToStaticMarkup(
+    <SystemSettingsPanel
+      settings={customSettings}
+      onSaveSettings={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(settingsHtml, /data-testid="settings-upload-stamp-input"/);
+  assert.match(settingsHtml, /data-testid="settings-upload-signature-input"/);
+  assert.match(settingsHtml, /data-testid="settings-stamp-preview"/);
+  assert.match(settingsHtml, /data-testid="settings-signature-preview"/);
+
+  const packingHtml = renderToStaticMarkup(
+    <DocumentGenerator
+      order={order}
+      customer={customer}
+      billToCustomer={customer}
+      supplier={supplier}
+      bank={bank}
+      logistics={seed.logisticsProviders[0]}
+      products={seed.products}
+      docLang="en"
+      initialDocTab="packing"
+      contractSettings={customSettings}
+      onChangeOrder={() => {}}
+      onChangeDocLang={() => {}}
+      onUpdateContractSettings={() => {}}
+      onCreateNewOrder={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(packingHtml, /Pallet 1/);
+  assert.match(packingHtml, /data-testid="uploaded-stamp-img"/);
+  assert.match(packingHtml, /data-testid="uploaded-signature-img"/);
+});
+
+
 

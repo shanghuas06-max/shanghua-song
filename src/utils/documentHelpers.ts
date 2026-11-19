@@ -140,7 +140,10 @@ export function buildPackingListDisplayRows(
   items: OrderItem[],
   products: Product[],
   explicitRows?: PackingListRow[],
+  options?: { palletCapacity?: number },
 ): RenderedPackingRow[] {
+  const palletCapacity = Math.max(1, Math.round(options?.palletCapacity ?? 60));
+
   const baseRows: (PackingListRow & { unitLabel: string })[] =
     explicitRows && explicitRows.length > 0
       ? explicitRows.map((row) => ({
@@ -149,48 +152,212 @@ export function buildPackingListDisplayRows(
             items[Math.max(0, row.itemNo - 1)]?.unit?.toLowerCase() || 'sets',
         }))
       : (() => {
+          const rows: (PackingListRow & { unitLabel: string })[] = [];
+          const prodById = new Map(products.map((p) => [p.id, p]));
+
+          // Pre-compute active shared carton groups (>= 2 items)
+          const groupIndicesMap = new Map<string, number[]>();
+          items.forEach((item, idx) => {
+            const g = (item.sharedCartonGroupId ?? '').trim();
+            if (g && g !== 'NONE') {
+              const arr = groupIndicesMap.get(g) ?? [];
+              arr.push(idx);
+              groupIndicesMap.set(g, arr);
+            }
+          });
+
+          const processedGroups = new Set<string>();
           let ctnCursor = 1;
-          return items.map((item, idx) => {
-            const prod = products.find((p) => p.id === item.productId);
+
+          for (let idx = 0; idx < items.length; idx += 1) {
+            const item = items[idx];
+            const groupId = (item.sharedCartonGroupId ?? '').trim();
+            const groupMembers =
+              groupId && groupId !== 'NONE'
+                ? groupIndicesMap.get(groupId)
+                : undefined;
+
+            if (groupId && groupMembers && groupMembers.length >= 2) {
+              if (processedGroups.has(groupId)) continue;
+              processedGroups.add(groupId);
+
+              const start = ctnCursor;
+              // Shared carton consolidation (typically 1 shared carton, or ceil(sumRatio))
+              const allHavePerCtn = groupMembers.every(
+                (mIdx) => Number(items[mIdx].setsPerCarton) > 0,
+              );
+              const rawGroupCartons = groupMembers.reduce(
+                (s, mIdx) => s + Math.max(0, Number(items[mIdx].cartons) || 0),
+                0,
+              );
+              let groupCartons = 1;
+              if (allHavePerCtn) {
+                const ratioSum = groupMembers.reduce(
+                  (s, mIdx) =>
+                    s +
+                    Math.max(0, Number(items[mIdx].quantity) || 0) /
+                      Math.max(1, Number(items[mIdx].setsPerCarton) || 1),
+                  0,
+                );
+                groupCartons =
+                  ratioSum <= 1.001
+                    ? 1
+                    : Math.min(
+                        Math.max(1, rawGroupCartons),
+                        Math.ceil(ratioSum - 1e-4),
+                      );
+              }
+              const end = start + groupCartons - 1;
+              ctnCursor = end + 1;
+
+              const ctnNo = start === end ? `${start}` : `${start} - ${end}`;
+              const explicitPallet = groupMembers
+                .map((mIdx) => items[mIdx].palletNo?.trim())
+                .find(Boolean);
+              const palletNum = Math.floor((start - 1) / palletCapacity) + 1;
+              const palletNo = explicitPallet || `Pallet ${palletNum}`;
+
+              groupMembers.forEach((mIdx) => {
+                const mItem = items[mIdx];
+                const prod = prodById.get(mItem.productId);
+                const specs = resolveItemSpecs(mItem, prod);
+                const qty = Math.max(0, Number(mItem.quantity) || 0);
+                const tw = Number(
+                  (qty * (mItem.unitNetWeightKg || 0)).toFixed(1),
+                );
+                rows.push({
+                  id: `pk-${mItem.id}`,
+                  palletNo,
+                  ctnNo,
+                  itemNo: mIdx + 1,
+                  type: mItem.sku,
+                  size: specs.size,
+                  material: specs.material,
+                  surfaceFinish: specs.surfaceFinish,
+                  setsPerCarton:
+                    groupCartons === 1
+                      ? qty
+                      : mItem.setsPerCarton && mItem.setsPerCarton > 0
+                        ? mItem.setsPerCarton
+                        : qty,
+                  cartonCount: groupCartons,
+                  sharedCarton: true,
+                  qty,
+                  unitWeightKg: mItem.unitNetWeightKg,
+                  totalWeightKg: tw,
+                  unitLabel: (mItem.unit || 'sets').toLowerCase(),
+                });
+              });
+              continue;
+            }
+
+            // Standard ungrouped item — split across 60-carton pallet boundaries when palletNo/cartonRange are auto
+            const prod = prodById.get(item.productId);
             const specs = resolveItemSpecs(item, prod);
             const cartons = Math.max(0, Number(item.cartons) || 0);
-            const start = ctnCursor;
-            const end = cartons > 0 ? start + cartons - 1 : start;
-            if (cartons > 0) ctnCursor = end + 1;
-            const ctnNo =
-              item.cartonRange?.trim() ||
-              (cartons === 0
-                ? '-'
-                : start === end
-                  ? `${start}`
-                  : `${start} - ${end}`);
+            const explicitPallet = item.palletNo?.trim() || '';
+            const explicitRange = item.cartonRange?.trim() || '';
             const setsPerCarton =
               item.setsPerCarton && item.setsPerCarton > 0
                 ? item.setsPerCarton
                 : cartons > 0
                   ? Math.round(item.quantity / cartons)
                   : item.quantity;
-            const tw = Number(
-              ((item.quantity || 0) * (item.unitNetWeightKg || 0)).toFixed(1),
-            );
-            return {
-              id: `pk-${item.id}`,
-              palletNo: item.palletNo?.trim() || String(idx + 1),
-              ctnNo,
-              itemNo: idx + 1,
-              type: item.sku,
-              size: specs.size,
-              material: specs.material,
-              surfaceFinish: specs.surfaceFinish,
-              setsPerCarton,
-              cartonCount: cartons,
-              sharedCarton: false,
-              qty: item.quantity,
-              unitWeightKg: item.unitNetWeightKg,
-              totalWeightKg: tw,
-              unitLabel: (item.unit || 'sets').toLowerCase(),
-            };
-          });
+
+            if (cartons === 0 || explicitPallet || explicitRange) {
+              const start = ctnCursor;
+              const end = cartons > 0 ? start + cartons - 1 : start;
+              if (cartons > 0) ctnCursor = end + 1;
+              const palletNum = Math.floor((Math.max(1, start) - 1) / palletCapacity) + 1;
+              const palletNo =
+                explicitPallet || (cartons === 0 ? '—' : `Pallet ${palletNum}`);
+              const ctnNo =
+                explicitRange ||
+                (cartons === 0
+                  ? '-'
+                  : start === end
+                    ? `${start}`
+                    : `${start} - ${end}`);
+              const tw = Number(
+                ((item.quantity || 0) * (item.unitNetWeightKg || 0)).toFixed(1),
+              );
+              rows.push({
+                id: `pk-${item.id}`,
+                palletNo,
+                ctnNo,
+                itemNo: idx + 1,
+                type: item.sku,
+                size: specs.size,
+                material: specs.material,
+                surfaceFinish: specs.surfaceFinish,
+                setsPerCarton,
+                cartonCount: cartons,
+                sharedCarton: false,
+                qty: item.quantity,
+                unitWeightKg: item.unitNetWeightKg,
+                totalWeightKg: tw,
+                unitLabel: (item.unit || 'sets').toLowerCase(),
+              });
+              continue;
+            }
+
+            // Split item cartons at each palletCapacity (60-carton) boundary
+            let remainingCartons = cartons;
+            let remainingQty = Math.max(0, Number(item.quantity) || 0);
+            let chunkIndex = 0;
+
+            while (remainingCartons > 0) {
+              const palletNum = Math.floor((ctnCursor - 1) / palletCapacity) + 1;
+              const palletMaxCtn = palletNum * palletCapacity;
+              const takeCartons = Math.min(
+                remainingCartons,
+                palletMaxCtn - ctnCursor + 1,
+              );
+              const chunkStart = ctnCursor;
+              const chunkEnd = chunkStart + takeCartons - 1;
+              ctnCursor = chunkEnd + 1;
+              remainingCartons -= takeCartons;
+
+              const chunkQty =
+                remainingCartons === 0
+                  ? remainingQty
+                  : Math.min(
+                      remainingQty,
+                      Math.round((item.quantity * takeCartons) / cartons),
+                    );
+              remainingQty -= chunkQty;
+
+              const chunkTw = Number(
+                (chunkQty * (item.unitNetWeightKg || 0)).toFixed(1),
+              );
+              rows.push({
+                id:
+                  chunkIndex === 0
+                    ? `pk-${item.id}`
+                    : `pk-${item.id}-p${palletNum}`,
+                palletNo: `Pallet ${palletNum}`,
+                ctnNo:
+                  chunkStart === chunkEnd
+                    ? `${chunkStart}`
+                    : `${chunkStart} - ${chunkEnd}`,
+                itemNo: idx + 1,
+                type: item.sku,
+                size: specs.size,
+                material: specs.material,
+                surfaceFinish: specs.surfaceFinish,
+                setsPerCarton,
+                cartonCount: takeCartons,
+                sharedCarton: false,
+                qty: chunkQty,
+                unitWeightKg: item.unitNetWeightKg,
+                totalWeightKg: chunkTw,
+                unitLabel: (item.unit || 'sets').toLowerCase(),
+              });
+              chunkIndex += 1;
+            }
+          }
+
+          return rows;
         })();
 
   const result: RenderedPackingRow[] = baseRows.map((row) => ({

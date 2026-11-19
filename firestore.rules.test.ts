@@ -191,3 +191,84 @@ test('Empty-master new order payload satisfies all firestore.rules order keys an
   assert.deepEqual(newOrderPayload.docOverrides, {});
   assert.equal(newOrderPayload.docSpecialFields.showSignature, true);
 });
+
+test('sanitizeContractSettings and firestore.rules bound stamp/signature images and preserve sharedCartonGroupId', async () => {
+  const { sanitizeContractSettings } = await import('./src/utils/firestoreSanitizers');
+  const fs = await import('node:fs');
+  const validPng =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const clean = sanitizeContractSettings({
+    companyStampImage: validPng,
+    signatureImage: 'https://evil.example.com/x.png',
+  });
+  assert.equal(clean.companyStampImage, validPng);
+  assert.equal(clean.signatureImage, '');
+
+  const orderWithMix = sanitizeOrderPayload(
+    {
+      id: 'ord-mix-test',
+      invoiceNo: 'HL-INV-MIX',
+      poNo: '',
+      orderDate: '2026-11-18',
+      paymentTerms: 'T/T',
+      currency: 'USD',
+      supplierId: '',
+      customerId: '',
+      bankAccountId: '',
+      items: [
+        {
+          id: 'oi-1',
+          productId: 'p1',
+          sku: 'HLN-M10',
+          description: 'M10',
+          hsCode: '7318.16.00',
+          quantity: 100,
+          unit: 'SETS',
+          unitPrice: 2,
+          cartons: 1,
+          unitNetWeightKg: 0.02,
+          unitGrossWeightKg: 0.025,
+          cartonLengthCm: 33,
+          cartonWidthCm: 25,
+          cartonHeightCm: 12,
+          originCountry: 'JAPAN',
+          sharedCartonGroupId: 'mix-1',
+        },
+      ],
+      shipping: {
+        mode: 'SEA',
+        logisticsProviderId: '',
+        incoterm: 'FOB',
+        incotermPlace: 'Osaka',
+        portOfLoading: 'Osaka',
+        portOfDischarge: '',
+        vesselOrFlightOrCourier: '',
+        trackingOrBlNo: '',
+        etd: '2026-11-18',
+        eta: '2026-11-28',
+        shippingMarksMain: '',
+        caseNumberPrefix: 'HL',
+      },
+      costs: {
+        packingHandlingCost: 0,
+        inlandFreightCost: 0,
+        mainFreightCost: 0,
+        insuranceMode: 'MANUAL',
+        insuranceManualCost: 0,
+        insuranceRatePercent: 0,
+        destinationHandlingCost: 0,
+        importDutyTaxCost: 0,
+      },
+      remarks: '',
+      createdAt: '2026-11-18T00:00:00Z',
+      updatedAt: '2026-11-18T00:00:00Z',
+    },
+    'lR7l5ycBWuN33sMDB5ZWKuuof7n1',
+  );
+  assert.equal(orderWithMix.items[0].sharedCartonGroupId, 'mix-1');
+
+  const rulesText = fs.readFileSync('firestore.rules', 'utf8');
+  assert.match(rulesText, /companyStampImage/);
+  assert.match(rulesText, /signatureImage/);
+});
+

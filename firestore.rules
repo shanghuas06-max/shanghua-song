@@ -75,6 +75,8 @@ service cloud.firestore {
             && data.contractSettings.clauses.size() <= 20
             && isStrLen(data.contractSettings.companyStampLabel, 0, 240)
             && isStrLen(data.contractSettings.defaultDisclaimerText, 0, 1000)
+            && (!('companyStampImage' in data.contractSettings) || isStrLen(data.contractSettings.companyStampImage, 0, 180000))
+            && (!('signatureImage' in data.contractSettings) || isStrLen(data.contractSettings.signatureImage, 0, 180000))
           )
         )
         && data.createdAt is timestamp

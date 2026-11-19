@@ -253,6 +253,8 @@ export function createDefaultContractSettings(): ContractSettings {
     defaultDisclaimerText:
       'Seller → Buyer transaction value only ({invoiceNo} / {orderDate} / {incoterm}). Any typographical amendments must be countersigned by both parties.',
     companyStampLabel: 'HARDLOCK Industry Co., Ltd.',
+    companyStampImage: '',
+    signatureImage: '',
     clauses,
   };
 }

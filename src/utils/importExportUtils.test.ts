@@ -465,4 +465,95 @@ test('buildContractDocxBuffer generates valid standalone Contract .docx preservi
   assert.match(contractCsv, /JPY ONE MILLION CUSTOM TEST ONLY\./);
 });
 
+test('buildContractDocxBuffer embeds uploaded stamp and signature PNGs and PACKING LIST Excel renders dotted dividers for shared half-cartons', async () => {
+  const TINY_PNG_A =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const TINY_PNG_B =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const seed = createInitialErpState();
+  const settings = {
+    ...createDefaultContractSettings(),
+    companyStampImage: TINY_PNG_A,
+    signatureImage: TINY_PNG_B,
+  };
+  const order = {
+    ...seed.orders[0],
+    items: [
+      {
+        ...seed.orders[0].items[0],
+        id: 'mix-a',
+        quantity: 150,
+        cartons: 1,
+        setsPerCarton: 300,
+        cartonRange: '',
+        palletNo: '',
+        sharedCartonGroupId: 'mix-1',
+      },
+      {
+        ...seed.orders[0].items[1],
+        id: 'mix-b',
+        quantity: 80,
+        cartons: 1,
+        setsPerCarton: 160,
+        cartonRange: '',
+        palletNo: '',
+        sharedCartonGroupId: 'mix-1',
+      },
+    ],
+    docSpecialFields: {
+      showCompanyStamp: true,
+      showSignature: true,
+      showDisclaimer: false,
+      disclaimerText: '',
+      customNote: '',
+    },
+  };
+  const customer = seed.customers.find((c) => c.id === order.customerId)!;
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  const docxBytes = await buildContractDocxBuffer(order, {
+    customer,
+    billToCustomer: customer,
+    supplier,
+    products: seed.products,
+    docLang: 'en',
+    contractSettings: settings,
+  });
+  const zip = new PizZip(docxBytes);
+  const mediaFiles = Object.keys(zip.files).filter((k) =>
+    k.startsWith('word/media/'),
+  );
+  assert.equal(mediaFiles.length, 2, 'Should embed both signature and stamp images into word/media/');
+  const docXml = zip.file('word/document.xml')?.asText() ?? '';
+  assert.equal((docXml.match(/<w:drawing>/g) ?? []).length, 2);
+
+  const wb = buildFormalDocumentWorkbook(order, {
+    customer,
+    billToCustomer: customer,
+    supplier,
+    bank,
+    products: seed.products,
+    docLang: 'en',
+    contractSettings: settings,
+  });
+  const plSheet = wb.Sheets['PACKING LIST'];
+  const plCsv = XLSX.utils.sheet_to_csv(plSheet);
+  assert.match(plCsv, /Pallet 1/);
+  assert.match(plCsv, /1 cartons/);
+
+  // Verify second row of shared carton has dotted top border on Description column
+  let foundDotted = false;
+  for (const [addr, cell] of Object.entries(plSheet)) {
+    if (addr.startsWith('!')) continue;
+    const style = (cell as { s?: { border?: { top?: { style?: string } } } })?.s;
+    if (style?.border?.top?.style === 'dotted') {
+      foundDotted = true;
+      break;
+    }
+  }
+  assert.equal(foundDotted, true, 'Shared carton sub-row should have dotted top border in PACKING LIST Excel');
+});
+
+
 

@@ -894,6 +894,7 @@ export default function App() {
               contractSettings={state.contractSettings}
               onChangeOrder={handleOrderChange}
               onChangeDocLang={handleChangeDocLang}
+              onUpdateContractSettings={handleSaveContractSettings}
               onCreateNewOrder={handleCreateNewOrder}
               t={t}
             />

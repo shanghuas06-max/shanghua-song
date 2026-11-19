@@ -48,7 +48,7 @@
         },
         "contractSettings": {
           "type": "object",
-          "description": "Customizable default Sales Contract / PI clauses, arbitration, disclaimer, and company stamp label."
+          "description": "Customizable default Sales Contract / PI clauses, arbitration, disclaimer, company stamp label, and uploaded Base64 stamp/signature images (<= 180KB each)."
         },
         "createdAt": {
           "type": "string",
@@ -206,7 +206,7 @@
         "palletVolumeDetails": { "type": "string", "minLength": 0, "maxLength": 1000 },
         "surfaceFootnotes": { "type": "string", "minLength": 0, "maxLength": 1000 },
         "packingRows": { "type": "array", "description": "Optional pallet-by-pallet packing list breakdown rows (max 100)." },
-        "items": { "type": "array", "description": "Bounded list of up to 50 order line items." },
+        "items": { "type": "array", "description": "Bounded list of up to 50 order line items including optional sharedCartonGroupId for half-carton consolidation." },
         "shipping": { "type": "object", "description": "Shipping mode, Incoterm 2020, ports, tracking, and marks." },
         "costs": { "type": "object", "description": "Packing, freight, insurance, destination, and duty costs." },
         "remarks": { "type": "string", "minLength": 0, "maxLength": 1000 },

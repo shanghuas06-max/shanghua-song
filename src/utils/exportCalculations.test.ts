@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  autoConsolidateHalfCartons,
   calculateItemCartons,
   calculateOrderSummary,
   calculatePalletPacking,
@@ -215,4 +216,61 @@ test('exchange rate helpers return JPY=1 and valid fallback rates for foreign cu
   assert.equal(resolveEffectiveExchangeRate('USD', 148.5), 148.5);
   assert.equal(resolveEffectiveExchangeRate('CNY', 0), 21);
 });
+
+test('autoConsolidateHalfCartons pairs compatible half-carton items and calculateOrderSummary charges tare & CBM once', () => {
+  const halfA: OrderItem = {
+    ...sampleItems[0],
+    id: 'half-a',
+    sku: 'HLN-M10',
+    quantity: 400,
+    setsPerCarton: 800,
+    cartons: 1,
+    unitNetWeightKg: 0.018,
+    cartonLengthCm: 33,
+    cartonWidthCm: 25,
+    cartonHeightCm: 12,
+  };
+  const halfB: OrderItem = {
+    ...sampleItems[0],
+    id: 'half-b',
+    sku: 'HLN-M12',
+    quantity: 300,
+    setsPerCarton: 600,
+    cartons: 1,
+    unitNetWeightKg: 0.026,
+    cartonLengthCm: 33,
+    cartonWidthCm: 25,
+    cartonHeightCm: 12,
+  };
+  const optOut: OrderItem = {
+    ...sampleItems[0],
+    id: 'half-none',
+    sku: 'HLN-M16',
+    quantity: 150,
+    setsPerCarton: 300,
+    cartons: 1,
+    unitNetWeightKg: 0.046,
+    cartonLengthCm: 33,
+    cartonWidthCm: 25,
+    cartonHeightCm: 12,
+    sharedCartonGroupId: 'NONE',
+  };
+
+  const consolidated = autoConsolidateHalfCartons([halfA, halfB, optOut]);
+  assert.equal(consolidated[0].sharedCartonGroupId, 'mix-1');
+  assert.equal(consolidated[1].sharedCartonGroupId, 'mix-1');
+  assert.equal(consolidated[2].sharedCartonGroupId, 'NONE');
+
+  // Linked totals: A+B share 1 physical carton + optOut is 1 carton = 2 cartons total (vs 3 raw)
+  const summary = calculateOrderSummary(consolidated, sampleCosts, 'FOB', 'USD', 0);
+  assert.equal(summary.unmergedCartons, 3);
+  assert.equal(summary.totalCartons, 2);
+  // N.W. = 400*0.018 (7.2) + 300*0.026 (7.8) + 150*0.046 (6.9) = 21.9 kg
+  assert.equal(summary.totalNetWeightKg, 21.9);
+  // G.W. = 21.9 + 2 * 0.65 = 23.2 kg (tare charged twice, NOT three times)
+  assert.equal(summary.cartonsGrossWeightKg, 23.2);
+  // Single carton vol = 0.33 * 0.25 * 0.12 = 0.0099 m3; 2 physical cartons = 0.020 m3 (0.0198 rounded)
+  assert.equal(summary.cartonsCbm, 0.02);
+});
+
 

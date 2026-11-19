@@ -30,11 +30,13 @@ import type {
 } from '../types/erp';
 import type { UiDictionary } from '../i18n/uiTranslations';
 import {
+  autoConsolidateHalfCartons,
   calculateItemCartons,
   calculateOrderSummary,
   calculatePalletPacking,
   formatMoney,
   getDefaultExchangeRate,
+  getItemFillRatio,
   resolveEffectiveExchangeRate,
 } from '../utils/exportCalculations';
 import { buildPackingListDisplayRows, resolveItemSpecs } from '../utils/documentHelpers';
@@ -216,11 +218,22 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
   const buildOrderWithPalletSync = (
     nextItems: OrderItem[],
     patch?: Partial<ExportOrder>,
+    options?: { autoPack?: boolean; forceConsolidate?: boolean },
   ): ExportOrder => {
-    const totalCtns = nextItems.reduce(
-      (sum, it) => sum + Math.max(0, Number(it.cartons) || 0),
-      0,
+    const effectiveItems =
+      options?.autoPack === false
+        ? nextItems
+        : autoConsolidateHalfCartons(nextItems, products, {
+            force: options?.forceConsolidate,
+          });
+    const consolidatedSummary = calculateOrderSummary(
+      effectiveItems,
+      patch?.costs ?? order.costs,
+      patch?.shipping?.incoterm ?? order.shipping.incoterm,
+      patch?.currency ?? order.currency,
+      patch?.palletCount ?? order.palletCount ?? 0,
     );
+    const totalCtns = consolidatedSummary.totalCartons;
     const layerSize = Math.max(
       1,
       Math.round(patch?.cartonsPerLayer ?? order.cartonsPerLayer ?? 12),
@@ -231,12 +244,21 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
     return {
       ...order,
       ...patch,
-      items: nextItems,
+      items: effectiveItems,
       palletCount: patch?.palletCount ?? pack.palletCount,
       emptyCartons: patch?.emptyCartons ?? pack.emptyCartons,
       cartonsPerLayer: layerSize,
       updatedAt: new Date().toISOString(),
     };
+  };
+
+  const handleConsolidateHalfCartonsNow = () => {
+    onChangeOrder(
+      buildOrderWithPalletSync(order.items, undefined, {
+        autoPack: true,
+        forceConsolidate: true,
+      }),
+    );
   };
 
   const updateOrder = (patch: Partial<ExportOrder>) => {
@@ -422,7 +444,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       cartonWidthCm: prod.cartonWidthCm,
       cartonHeightCm: prod.cartonHeightCm,
       originCountry: prod.originCountry,
-      palletNo: String(order.items.length + 1),
+      palletNo: '',
       cartonRange: '',
       setsPerCarton: defaultQty,
     };
@@ -455,7 +477,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       cartonWidthCm: 25,
       cartonHeightCm: 12,
       originCountry: 'JAPAN',
-      palletNo: String(order.items.length + 1),
+      palletNo: '',
       cartonRange: '',
       setsPerCarton: 100,
     };
@@ -548,6 +570,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
         const prod = products.find((p) => p.id === item.productId);
         if (prod) {
           if (prod.defaultUnitsPerCarton > 0) {
+            updated.setsPerCarton = prod.defaultUnitsPerCarton;
             updated.cartons = calculateItemCartons(
               patch.quantity,
               prod.defaultUnitsPerCarton,
@@ -569,7 +592,15 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       return updated;
     });
 
-    if (typeof patch.quantity === 'number' || typeof patch.cartons === 'number') {
+    if (patch.sharedCartonGroupId !== undefined) {
+      onChangeOrder(
+        buildOrderWithPalletSync(nextItems, undefined, { autoPack: false }),
+      );
+    } else if (
+      typeof patch.quantity === 'number' ||
+      typeof patch.cartons === 'number' ||
+      typeof patch.setsPerCarton === 'number'
+    ) {
       onChangeOrder(buildOrderWithPalletSync(nextItems));
     } else {
       updateOrder({ items: nextItems });
@@ -920,6 +951,15 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
             >
               <span>{t.btnAddCustomItem}</span>
             </button>
+            <button
+              type="button"
+              data-testid="auto-consolidate-btn"
+              onClick={handleConsolidateHalfCartonsNow}
+              className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors whitespace-nowrap"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>{t.autoConsolidateHalfBtn}</span>
+            </button>
           </div>
         </div>
 
@@ -970,7 +1010,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                                 palletNo: e.target.value,
                               })
                             }
-                            className="w-16 h-7 px-1.5 text-[11px] font-mono-tabular border border-slate-200 rounded bg-slate-50"
+                            className="w-20 h-7 px-1.5 text-[11px] font-mono-tabular border border-slate-200 rounded bg-slate-50"
                           />
                           <input
                             type="text"
@@ -1130,7 +1170,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                           );
                         })()}
                       </td>
-                      <td className="py-2 px-3 align-top">
+                      <td className="py-2 px-3 align-top space-y-1">
                         <input
                           type="number"
                           min={0}
@@ -1143,6 +1183,45 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                           }
                           className="w-full h-8 px-2 text-xs text-right font-mono-tabular border border-slate-200 rounded bg-white"
                         />
+                        {(() => {
+                          const linkedProd = products.find(
+                            (p) => p.id === item.productId,
+                          );
+                          const fillRatio = getItemFillRatio(item, linkedProd);
+                          const isPartial = fillRatio > 0 && fillRatio < 0.9999;
+                          const curGroup = item.sharedCartonGroupId ?? '';
+                          return (
+                            <div className="space-y-1">
+                              {isPartial && (
+                                <div className="text-right">
+                                  <span
+                                    data-testid={`half-carton-badge-${idx}`}
+                                    className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 rounded"
+                                  >
+                                    {Number(fillRatio.toFixed(2))} ({t.halfCartonBadge})
+                                  </span>
+                                </div>
+                              )}
+                              <select
+                                aria-label={`${t.sharedCartonGroupLabel} row ${idx + 1}`}
+                                data-testid={`item-shared-group-${idx}`}
+                                value={curGroup}
+                                onChange={(e) =>
+                                  handleItemChange(item.id, {
+                                    sharedCartonGroupId: e.target.value,
+                                  })
+                                }
+                                className="w-full h-6 px-1 text-[10px] bg-slate-50 border border-slate-200 rounded text-slate-700"
+                              >
+                                <option value="">{t.sharedCartonAuto}</option>
+                                <option value="NONE">{t.sharedCartonNone}</option>
+                                <option value="mix-1">{t.sharedCartonGroupPrefix} 1</option>
+                                <option value="mix-2">{t.sharedCartonGroupPrefix} 2</option>
+                                <option value="mix-3">{t.sharedCartonGroupPrefix} 3</option>
+                              </select>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-2 px-3 align-top text-right font-mono-tabular text-xs text-slate-600 leading-8 whitespace-nowrap">
                         {calc?.netWeightKg.toFixed(2)} / {calc?.grossWeightKg.toFixed(2)}
@@ -1178,9 +1257,22 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
           </div>
           <div>
             <span className="text-slate-500">{t.totalCartons}: </span>
-            <span className="font-mono-tabular font-semibold text-slate-900">
+            <span
+              data-testid="summary-total-cartons"
+              className="font-mono-tabular font-semibold text-slate-900"
+            >
               {summary.totalCartons}
             </span>
+            {summary.unmergedCartons > summary.totalCartons && (
+              <span
+                data-testid="consolidated-savings-hint"
+                className="block text-[10px] font-medium text-amber-700 mt-0.5"
+              >
+                {t.consolidatedSavingsHint
+                  .replace('{raw}', String(summary.unmergedCartons))
+                  .replace('{merged}', String(summary.totalCartons))}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <label

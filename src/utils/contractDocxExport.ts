@@ -4,6 +4,7 @@ import {
   Document,
   Footer,
   Header,
+  ImageRun,
   Packer,
   PageNumber,
   Paragraph,
@@ -36,6 +37,10 @@ import {
   interpolateContractText,
   numberToContractWords,
 } from './contractDefaults';
+import {
+  computeDocxImageBox,
+  parseDataUrlImage,
+} from './imageUploadUtils';
 
 export interface ContractDocxExportContext {
   customer?: Customer;
@@ -591,6 +596,12 @@ export function buildContractDocxDocument(
     ? supplier?.signatoryName?.replace(/^(Mr\.|Ms\.)\s*/i, '') ||
       'Song Shanghua'
     : '';
+  const parsedSignatureImage = showSig
+    ? parseDataUrlImage(settings.signatureImage ?? '')
+    : null;
+  const parsedStampImage = special.showCompanyStamp
+    ? parseDataUrlImage(settings.companyStampImage ?? '')
+    : null;
 
   const sellerSignParagraphs: Paragraph[] = [
     new Paragraph({
@@ -610,13 +621,26 @@ export function buildContractDocxDocument(
       border: {
         bottom: { style: BorderStyle.SINGLE, size: 6, color: '000000' },
       },
-      children: sigMark
-        ? makeRuns(sigMark, {
-            italics: true,
-            size: 30,
-            color: '475569',
-          })
-        : makeRuns(' ', { size: 24 }),
+      children: parsedSignatureImage
+        ? [
+            new ImageRun({
+              type: parsedSignatureImage.docxType,
+              data: parsedSignatureImage.bytes,
+              transformation: computeDocxImageBox(
+                parsedSignatureImage.bytes,
+                parsedSignatureImage.docxType,
+                150,
+                42,
+              ),
+            }),
+          ]
+        : sigMark
+          ? makeRuns(sigMark, {
+              italics: true,
+              size: 30,
+              color: '475569',
+            })
+          : makeRuns(' ', { size: 24 }),
     }),
     new Paragraph({
       spacing: { before: 40, after: 20 },
@@ -629,23 +653,44 @@ export function buildContractDocxDocument(
   ];
 
   if (special.showCompanyStamp) {
-    sellerSignParagraphs.push(
-      new Paragraph({
-        spacing: { before: 100, after: 40 },
-        border: {
-          top: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
-          bottom: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
-          left: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
-          right: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
-        },
-        alignment: AlignmentType.CENTER,
-        children: makeRuns(`[AUTHORIZED SEAL / 公章] ${stampLabel}`, {
-          bold: true,
-          size: 18,
-          color: 'B91C1C',
+    if (parsedStampImage) {
+      sellerSignParagraphs.push(
+        new Paragraph({
+          spacing: { before: 80, after: 40 },
+          alignment: AlignmentType.RIGHT,
+          children: [
+            new ImageRun({
+              type: parsedStampImage.docxType,
+              data: parsedStampImage.bytes,
+              transformation: computeDocxImageBox(
+                parsedStampImage.bytes,
+                parsedStampImage.docxType,
+                92,
+                92,
+              ),
+            }),
+          ],
         }),
-      }),
-    );
+      );
+    } else {
+      sellerSignParagraphs.push(
+        new Paragraph({
+          spacing: { before: 100, after: 40 },
+          border: {
+            top: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
+            bottom: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
+            left: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
+            right: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
+          },
+          alignment: AlignmentType.CENTER,
+          children: makeRuns(`[AUTHORIZED SEAL / 公章] ${stampLabel}`, {
+            bold: true,
+            size: 18,
+            color: 'B91C1C',
+          }),
+        }),
+      );
+    }
   }
 
   const signatureTable = new Table({

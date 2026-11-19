@@ -11,6 +11,7 @@ import {
   Stamp,
   RotateCcw,
   ChevronDown,
+  Upload,
 } from 'lucide-react';
 import type {
   BankAccount,
@@ -52,6 +53,8 @@ import {
   findMatchingCustomerTemplate,
 } from '../utils/templateExportUtils';
 
+import { compressImageFileToDataUrl } from '../utils/imageUploadUtils';
+
 interface DocumentGeneratorProps {
   order: ExportOrder | undefined;
   customer: Customer | undefined;
@@ -65,6 +68,7 @@ interface DocumentGeneratorProps {
   contractSettings?: ContractSettings;
   onChangeOrder?: (updated: ExportOrder) => void;
   onChangeDocLang: (lang: DocLanguage) => void;
+  onUpdateContractSettings?: (next: ContractSettings) => void | Promise<void>;
   onCreateNewOrder: () => void;
   t: UiDictionary;
 }
@@ -271,11 +275,13 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
   contractSettings,
   onChangeOrder,
   onChangeDocLang,
+  onUpdateContractSettings,
   onCreateNewOrder,
   t,
 }) => {
   const [activeDoc, setActiveDoc] = useState<DocumentTab>(initialDocTab);
   const [specialMenuOpen, setSpecialMenuOpen] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const d = DOC_TEXT[docLang];
   const settings = contractSettings ?? createDefaultContractSettings();
 
@@ -373,6 +379,41 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
         ...patch,
       },
       updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleUploadSealOrSig = async (
+    target: 'companyStampImage' | 'signatureImage',
+    file: File | undefined,
+  ) => {
+    if (!file || !onUpdateContractSettings) return;
+    setUploadError(null);
+    try {
+      const dataUrl = await compressImageFileToDataUrl(file);
+      await onUpdateContractSettings({
+        ...settings,
+        [target]: dataUrl,
+      });
+      if (target === 'companyStampImage') {
+        handleUpdateSpecialFields({ showCompanyStamp: true });
+      } else {
+        handleUpdateSpecialFields({ showSignature: true });
+      }
+    } catch (err) {
+      setUploadError(
+        err instanceof Error ? err.message : 'Image upload failed.',
+      );
+    }
+  };
+
+  const handleClearSealOrSig = async (
+    target: 'companyStampImage' | 'signatureImage',
+  ) => {
+    if (!onUpdateContractSettings) return;
+    setUploadError(null);
+    await onUpdateContractSettings({
+      ...settings,
+      [target]: '',
     });
   };
 
@@ -686,6 +727,71 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
                 />
               </div>
             </div>
+
+            {onUpdateContractSettings && (
+              <div className="pt-2.5 border-t border-slate-200 space-y-2">
+                {uploadError && (
+                  <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2.5 py-1.5">
+                    {uploadError}
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50 cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{t.uploadStampImageBtn}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      data-testid="doc-upload-stamp-input"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        void handleUploadSealOrSig('companyStampImage', file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {settings.companyStampImage && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleClearSealOrSig('companyStampImage')
+                      }
+                      className="px-2 py-1 text-[11px] text-red-600 bg-white border border-red-200 rounded hover:bg-red-50"
+                    >
+                      {t.clearImageBtn} ({t.uploadStampImageBtn})
+                    </button>
+                  )}
+
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50 cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{t.uploadSignatureImageBtn}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      data-testid="doc-upload-signature-input"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        void handleUploadSealOrSig('signatureImage', file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {settings.signatureImage && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleClearSealOrSig('signatureImage')
+                      }
+                      className="px-2 py-1 text-[11px] text-red-600 bg-white border border-red-200 rounded hover:bg-red-50"
+                    >
+                      {t.clearImageBtn} ({t.uploadSignatureImageBtn})
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -943,25 +1049,42 @@ const HardlockFooterSplit: React.FC<{
 
       <div className="relative min-w-[230px] max-w-[270px]">
         {special.showCompanyStamp && (
-          <div className="absolute -top-6 right-0 opacity-90">
-            <CompanyStampSvg label={stampLabel} />
+          <div className="absolute -top-6 right-0 opacity-90 pointer-events-none">
+            {settings.companyStampImage ? (
+              <img
+                src={settings.companyStampImage}
+                alt="Company Stamp"
+                data-testid="uploaded-stamp-img"
+                className="w-24 h-24 object-contain"
+              />
+            ) : (
+              <CompanyStampSvg label={stampLabel} />
+            )}
           </div>
         )}
         <div className="text-[11px]">
           {supplier?.name || 'HARDLOCK Industry Co., Ltd.'}
         </div>
-        <div className="pt-1 pb-0.5 border-b border-black min-h-[24px]">
-          {showSig && (
-            <div
-              className="text-[19px] leading-none text-slate-600/80 select-none italic tracking-wide"
-              style={{
-                fontFamily: '"Brush Script MT", "Segoe Script", Georgia, serif',
-              }}
-            >
-              {supplier?.signatoryName?.replace(/^(Mr\.|Ms\.)\s*/i, '') ||
-                'Song Shanghua'}
-            </div>
-          )}
+        <div className="pt-1 pb-0.5 border-b border-black min-h-[28px] flex items-end">
+          {showSig &&
+            (settings.signatureImage ? (
+              <img
+                src={settings.signatureImage}
+                alt="Authorized Signature"
+                data-testid="uploaded-signature-img"
+                className="max-h-10 max-w-[160px] object-contain"
+              />
+            ) : (
+              <div
+                className="text-[19px] leading-none text-slate-600/80 select-none italic tracking-wide"
+                style={{
+                  fontFamily: '"Brush Script MT", "Segoe Script", Georgia, serif',
+                }}
+              >
+                {supplier?.signatoryName?.replace(/^(Mr\.|Ms\.)\s*/i, '') ||
+                  'Song Shanghua'}
+              </div>
+            ))}
         </div>
         <div className="mt-0.5 text-[11px]">
           {supplier?.signatoryName || 'Mr. Song Shanghua'}
@@ -1628,7 +1751,7 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
         <table className="w-full border-collapse text-[10.5px] tabular-nums">
           <thead>
             <tr className="font-bold text-center bg-white">
-              <th className="border border-black px-1 py-1 w-10 leading-tight">
+              <th className="border border-black px-1 py-1 w-16 whitespace-nowrap leading-tight">
                 Pallet
                 <br />
                 No.
@@ -2254,8 +2377,17 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
 
         <div className="relative space-y-1.5">
           {special.showCompanyStamp && (
-            <div className="absolute top-6 right-2 opacity-90">
-              <CompanyStampSvg label={stampLabel} />
+            <div className="absolute top-6 right-2 opacity-90 pointer-events-none">
+              {settings.companyStampImage ? (
+                <img
+                  src={settings.companyStampImage}
+                  alt="Company Stamp"
+                  data-testid="uploaded-stamp-img"
+                  className="w-24 h-24 object-contain"
+                />
+              ) : (
+                <CompanyStampSvg label={stampLabel} />
+              )}
             </div>
           )}
           <div>卖方 : THE SELLER:</div>
@@ -2276,19 +2408,27 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
               onCommit={onCommitOverride}
             />
           </div>
-          <div className="h-10 border-b border-black flex items-end pb-1">
-            {showSig && (
-              <span
-                className="text-[20px] leading-none text-slate-600/80 select-none italic tracking-wide"
-                style={{
-                  fontFamily:
-                    '"Brush Script MT", "Segoe Script", Georgia, serif',
-                }}
-              >
-                {supplier?.signatoryName?.replace(/^(Mr\.|Ms\.)\s*/i, '') ||
-                  'Song Shanghua'}
-              </span>
-            )}
+          <div className="h-12 border-b border-black flex items-end pb-1">
+            {showSig &&
+              (settings.signatureImage ? (
+                <img
+                  src={settings.signatureImage}
+                  alt="Authorized Signature"
+                  data-testid="uploaded-signature-img"
+                  className="max-h-10 max-w-[160px] object-contain"
+                />
+              ) : (
+                <span
+                  className="text-[20px] leading-none text-slate-600/80 select-none italic tracking-wide"
+                  style={{
+                    fontFamily:
+                      '"Brush Script MT", "Segoe Script", Georgia, serif',
+                  }}
+                >
+                  {supplier?.signatoryName?.replace(/^(Mr\.|Ms\.)\s*/i, '') ||
+                    'Song Shanghua'}
+                </span>
+              ))}
           </div>
           <div>
             <EditableText

@@ -302,6 +302,18 @@ export interface UiDictionary {
   usedPalletsLabel: string;
   palletSpecHint: string;
   btnExportContractDocx: string;
+  stampSigSectionTitle: string;
+  stampSigUploadHint: string;
+  uploadStampImageBtn: string;
+  uploadSignatureImageBtn: string;
+  clearImageBtn: string;
+  autoConsolidateHalfBtn: string;
+  sharedCartonGroupLabel: string;
+  sharedCartonAuto: string;
+  sharedCartonNone: string;
+  sharedCartonGroupPrefix: string;
+  halfCartonBadge: string;
+  consolidatedSavingsHint: string;
 }
 
 export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
@@ -612,6 +624,18 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     usedPalletsLabel: '使用托盘数量 (Pallets)',
     palletSpecHint: '单箱+0.65kg · 单托盘17kg (110×110×14cm = 0.1694m³)',
     btnExportContractDocx: '导出合同 Word (.docx)',
+    stampSigSectionTitle: '电子印章与授权签名图片上传（同步至预览 / 打印 / Word）',
+    stampSigUploadHint: '支持 PNG / JPG 透明印章及手写签名图片，系统将自动压缩适配（≤ 150KB）并实时嵌入发票、箱单与合同单据。',
+    uploadStampImageBtn: '上传公章图片',
+    uploadSignatureImageBtn: '上传签名图片',
+    clearImageBtn: '清除图片',
+    autoConsolidateHalfBtn: '一键自动拼半箱',
+    sharedCartonGroupLabel: '拼箱组合',
+    sharedCartonAuto: '自动判断',
+    sharedCartonNone: '独立装箱',
+    sharedCartonGroupPrefix: '拼箱组',
+    halfCartonBadge: '半箱',
+    consolidatedSavingsHint: '拼箱合并：{raw} 箱 → 实计 {merged} 整箱',
   },
   ja: {
     brandTitle: 'HARDLOCK ERP',
@@ -920,6 +944,18 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     usedPalletsLabel: '使用パレット数 (Pallets)',
     palletSpecHint: '箱+0.65kg · パレット17kg (110×110×14cm = 0.1694m³)',
     btnExportContractDocx: '契約書 Word (.docx) 出力',
+    stampSigSectionTitle: '社印・署名画像のアップロード（プレビュー / 印刷 / Word 反映）',
+    stampSigUploadHint: 'PNG / JPG の社印・手書き署名画像をアップロードすると自動圧縮（≤150KB）され、書類・Word に埋め込まれます。',
+    uploadStampImageBtn: '社印画像をアップロード',
+    uploadSignatureImageBtn: '署名画像をアップロード',
+    clearImageBtn: '画像をクリア',
+    autoConsolidateHalfBtn: '半箱を自動同梱',
+    sharedCartonGroupLabel: '混載グループ',
+    sharedCartonAuto: '自動判定',
+    sharedCartonNone: '個別梱包',
+    sharedCartonGroupPrefix: '混載',
+    halfCartonBadge: '半箱',
+    consolidatedSavingsHint: '混載統合：{raw} 箱 → 実梱包 {merged} 箱',
   },
   en: {
     brandTitle: 'HARDLOCK ERP',
@@ -1228,5 +1264,17 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     usedPalletsLabel: 'Used Pallets',
     palletSpecHint: '+0.65kg/ctn · +17kg/pallet (110×110×14cm = 0.1694m³)',
     btnExportContractDocx: 'Export Contract (.docx)',
+    stampSigSectionTitle: 'Company Stamp & Signature Image Upload',
+    stampSigUploadHint: 'Upload local PNG/JPG seal or handwritten signature images (auto-compressed ≤ 150KB) to embed directly into Preview, Print & Word.',
+    uploadStampImageBtn: 'Upload Stamp Image',
+    uploadSignatureImageBtn: 'Upload Signature Image',
+    clearImageBtn: 'Remove Image',
+    autoConsolidateHalfBtn: 'Auto-Consolidate Half Cartons',
+    sharedCartonGroupLabel: 'Shared Carton',
+    sharedCartonAuto: 'Auto Pack',
+    sharedCartonNone: 'Separate',
+    sharedCartonGroupPrefix: 'Mix Box',
+    halfCartonBadge: 'Partial',
+    consolidatedSavingsHint: 'Consolidated: {raw} raw → {merged} physical cartons',
   },
 };

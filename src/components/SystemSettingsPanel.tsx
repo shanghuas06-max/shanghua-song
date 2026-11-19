@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, RotateCcw, Save, Settings, Trash2 } from 'lucide-react';
+import { Image as ImageIcon, Plus, RotateCcw, Save, Settings, Trash2, Upload } from 'lucide-react';
 import type { ContractClauseItem, ContractSettings } from '../types/erp';
 import type { UiDictionary } from '../i18n/uiTranslations';
 import { createDefaultContractSettings } from '../utils/contractDefaults';
+import { compressImageFileToDataUrl } from '../utils/imageUploadUtils';
 
 interface SystemSettingsPanelProps {
   settings: ContractSettings;
@@ -17,6 +18,7 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
 }) => {
   const [draft, setDraft] = useState<ContractSettings>(settings);
   const [savedToast, setSavedToast] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(settings);
@@ -38,6 +40,35 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSaveSettings(draft);
+    setSavedToast(t.settingsSavedToast);
+  };
+
+  const handleImageUpload = async (
+    target: 'companyStampImage' | 'signatureImage',
+    file: File | undefined,
+  ) => {
+    if (!file) return;
+    setImageError(null);
+    try {
+      const dataUrl = await compressImageFileToDataUrl(file);
+      const next = { ...draft, [target]: dataUrl };
+      setDraft(next);
+      await onSaveSettings(next);
+      setSavedToast(t.settingsSavedToast);
+    } catch (err) {
+      setImageError(
+        err instanceof Error ? err.message : 'Image upload failed.',
+      );
+    }
+  };
+
+  const handleClearImage = async (
+    target: 'companyStampImage' | 'signatureImage',
+  ) => {
+    setImageError(null);
+    const next = { ...draft, [target]: '' };
+    setDraft(next);
+    await onSaveSettings(next);
     setSavedToast(t.settingsSavedToast);
   };
 
@@ -345,6 +376,123 @@ export const SystemSettingsPanel: React.FC<SystemSettingsPanelProps> = ({
               }
               className="w-full h-9 px-3 text-xs border border-slate-300 rounded-md"
             />
+          </div>
+        </div>
+      </section>
+
+      {/* Stamp & Signature Image Upload Section */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <ImageIcon className="w-4 h-4 text-blue-700" />
+            <h2 className="text-sm font-bold text-slate-900">
+              {t.stampSigSectionTitle}
+            </h2>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">{t.stampSigUploadHint}</p>
+        </div>
+
+        {imageError && (
+          <div className="p-2.5 text-xs text-red-700 bg-red-50 border border-red-200 rounded">
+            {imageError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-3.5 border border-slate-200 rounded-md bg-slate-50/70 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-800">
+                {t.uploadStampImageBtn}
+              </span>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50 cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{t.uploadStampImageBtn}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    data-testid="settings-upload-stamp-input"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      void handleImageUpload('companyStampImage', file);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                {draft.companyStampImage && (
+                  <button
+                    type="button"
+                    onClick={() => void handleClearImage('companyStampImage')}
+                    className="px-2 py-1 text-xs text-red-600 bg-white border border-red-200 rounded hover:bg-red-50"
+                  >
+                    {t.clearImageBtn}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="h-24 bg-white border border-dashed border-slate-300 rounded flex items-center justify-center p-2">
+              {draft.companyStampImage ? (
+                <img
+                  src={draft.companyStampImage}
+                  alt="Company Stamp Preview"
+                  data-testid="settings-stamp-preview"
+                  className="max-h-20 max-w-full object-contain"
+                />
+              ) : (
+                <span className="text-[11px] text-slate-400">
+                  {t.settingsStampLabel}: {draft.companyStampLabel}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="p-3.5 border border-slate-200 rounded-md bg-slate-50/70 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-800">
+                {t.uploadSignatureImageBtn}
+              </span>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50 cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{t.uploadSignatureImageBtn}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    data-testid="settings-upload-signature-input"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      void handleImageUpload('signatureImage', file);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                {draft.signatureImage && (
+                  <button
+                    type="button"
+                    onClick={() => void handleClearImage('signatureImage')}
+                    className="px-2 py-1 text-xs text-red-600 bg-white border border-red-200 rounded hover:bg-red-50"
+                  >
+                    {t.clearImageBtn}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="h-24 bg-white border border-dashed border-slate-300 rounded flex items-center justify-center p-2">
+              {draft.signatureImage ? (
+                <img
+                  src={draft.signatureImage}
+                  alt="Signature Preview"
+                  data-testid="settings-signature-preview"
+                  className="max-h-16 max-w-full object-contain"
+                />
+              ) : (
+                <span className="text-[11px] text-slate-400">
+                  {t.specialSignatureLabel}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </section>
