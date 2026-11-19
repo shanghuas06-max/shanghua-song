@@ -12,6 +12,7 @@ import type {
   AuditLogEntry,
   BackupSnapshot,
   BankAccount,
+  ContractSettings,
   Customer,
   DocLanguage,
   ErpDataPayload,
@@ -38,6 +39,7 @@ interface HistoryBackupManagerProps {
   bankAccounts?: BankAccount[];
   products?: Product[];
   docLang?: DocLanguage;
+  contractSettings?: ContractSettings;
   auditLogs: AuditLogEntry[];
   snapshots: BackupSnapshot[];
   onLoadOrder: (orderId: string) => void;
@@ -58,6 +60,7 @@ export const HistoryBackupManager: React.FC<HistoryBackupManagerProps> = ({
   bankAccounts = [],
   products = [],
   docLang = 'en',
+  contractSettings,
   auditLogs,
   snapshots,
   onLoadOrder,
@@ -263,6 +266,7 @@ export const HistoryBackupManager: React.FC<HistoryBackupManagerProps> = ({
                       ord.costs,
                       ord.shipping.incoterm,
                       ord.currency,
+                      ord.palletCount ?? 0,
                     );
                     const isActive = ord.id === activeOrderId;
                     return (
@@ -311,6 +315,7 @@ export const HistoryBackupManager: React.FC<HistoryBackupManagerProps> = ({
                                 bank,
                                 products,
                                 docLang,
+                                contractSettings,
                               });
                             }}
                             aria-label={`${t.btnExportExcel} ${ord.invoiceNo}`}

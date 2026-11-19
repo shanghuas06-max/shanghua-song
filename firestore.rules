@@ -57,7 +57,7 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'uid', 'email', 'displayName', 'companyName',
-          'uiLang', 'docLang', 'activeOrderId', 'createdAt', 'updatedAt'
+          'uiLang', 'docLang', 'activeOrderId', 'contractSettings', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.uid)
         && data.uid == userId
@@ -68,6 +68,15 @@ service cloud.firestore {
         && data.uiLang in ['zh', 'ja', 'en']
         && data.docLang in ['en', 'ja', 'zh']
         && isStrLen(data.activeOrderId, 0, 128)
+        && (
+          !('contractSettings' in data) || (
+            data.contractSettings is map
+            && data.contractSettings.clauses is list
+            && data.contractSettings.clauses.size() <= 20
+            && isStrLen(data.contractSettings.companyStampLabel, 0, 240)
+            && isStrLen(data.contractSettings.defaultDisclaimerText, 0, 1000)
+          )
+        )
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -83,7 +92,7 @@ service cloud.firestore {
           'id', 'ownerId', 'code', 'name', 'country', 'address',
           'contactName', 'email', 'phone', 'fax', 'taxOrImporterId',
           'defaultCurrency', 'defaultIncoterm', 'notifyParty', 'customPrices',
-          'createdAt', 'updatedAt'
+          'documentTemplates', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
         && data.id == docId
@@ -115,6 +124,21 @@ service cloud.firestore {
               !('tieredPrices' in data.customPrices[0]) || (
                 data.customPrices[0].tieredPrices is list
                 && data.customPrices[0].tieredPrices.size() <= 20
+              )
+            )
+          )
+        )
+        && (
+          !('documentTemplates' in data) || (
+            data.documentTemplates is list
+            && data.documentTemplates.size() <= 3
+            && (
+              data.documentTemplates.size() == 0 || (
+                data.documentTemplates[0] is map
+                && isStrLen(data.documentTemplates[0].name, 1, 240)
+                && isStrLen(data.documentTemplates[0].fileBase64, 1, 450000)
+                && data.documentTemplates[0].fileType in ['xlsx', 'docx']
+                && data.documentTemplates[0].docScope in ['invoice', 'packing', 'contract', 'all']
               )
             )
           )
@@ -331,6 +355,7 @@ service cloud.firestore {
           'itemHeader', 'palletCount', 'emptyCartons', 'cartonsPerLayer', 'palletVolumeDetails',
           'surfaceFootnotes', 'packingRows',
           'items', 'shipping', 'costs', 'remarks',
+          'docOverrides', 'docSpecialFields',
           'orderCreatedAt', 'orderUpdatedAt', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
@@ -380,6 +405,8 @@ service cloud.firestore {
         && isValidOrderShipping(data.shipping)
         && isValidOrderCosts(data.costs)
         && isStrLen(data.remarks, 0, 1000)
+        && (!('docOverrides' in data) || (data.docOverrides is map && data.docOverrides.keys().size() <= 60))
+        && (!('docSpecialFields' in data) || (data.docSpecialFields is map && data.docSpecialFields.keys().size() <= 10))
         && isStrLen(data.orderCreatedAt, 0, 64)
         && isStrLen(data.orderUpdatedAt, 0, 64)
         && data.createdAt is timestamp
@@ -428,7 +455,7 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['uiLang', 'docLang', 'activeOrderId', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['uiLang', 'docLang', 'activeOrderId', 'contractSettings', 'updatedAt']) ||
           incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'companyName', 'updatedAt'])
         );
       allow delete: if false;
@@ -453,7 +480,7 @@ service cloud.firestore {
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'code', 'name', 'country', 'address', 'contactName',
             'email', 'phone', 'fax', 'taxOrImporterId', 'defaultCurrency',
-            'defaultIncoterm', 'notifyParty', 'customPrices', 'updatedAt'
+            'defaultIncoterm', 'notifyParty', 'customPrices', 'documentTemplates', 'updatedAt'
           ]);
         allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(customerId);
       }
@@ -579,7 +606,8 @@ service cloud.firestore {
             'supplierId', 'customerId', 'billToCustomerId', 'bankAccountId',
             'itemHeader', 'palletCount', 'emptyCartons', 'cartonsPerLayer', 'palletVolumeDetails',
             'surfaceFootnotes', 'packingRows', 'items',
-            'shipping', 'costs', 'remarks', 'orderCreatedAt', 'orderUpdatedAt', 'updatedAt'
+            'shipping', 'costs', 'remarks', 'docOverrides', 'docSpecialFields',
+            'orderCreatedAt', 'orderUpdatedAt', 'updatedAt'
           ]);
         allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(orderId);
       }

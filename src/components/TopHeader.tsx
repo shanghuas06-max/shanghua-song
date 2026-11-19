@@ -31,6 +31,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     documents: t.navDocuments,
     master: t.navMaster,
     history: t.navHistory,
+    settings: t.navSettings,
   };
 
   return (

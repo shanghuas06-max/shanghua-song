@@ -3,6 +3,7 @@ import type { DocLanguage, TransportMode } from '../types/erp';
 export interface DocDictionary {
   commercialInvoice: string;
   packingList: string;
+  salesContract: string;
   caseMarkSheet: string;
   shipperExporter: string;
   consignee: string;
@@ -57,6 +58,7 @@ export const DOC_TEXT: Record<DocLanguage, DocDictionary> = {
   en: {
     commercialInvoice: 'COMMERCIAL INVOICE',
     packingList: 'PACKING LIST',
+    salesContract: 'CONTRACT',
     caseMarkSheet: 'SHIPPING CASE MARK',
     shipperExporter: 'SHIPPER / EXPORTER',
     consignee: 'CONSIGNEE / BUYER',
@@ -114,6 +116,7 @@ export const DOC_TEXT: Record<DocLanguage, DocDictionary> = {
   ja: {
     commercialInvoice: 'COMMERCIAL INVOICE（商業送り状）',
     packingList: 'PACKING LIST（梱包明細書）',
+    salesContract: 'CONTRACT（売買契約書）',
     caseMarkSheet: 'CASE MARK（荷印・ケースマーク）',
     shipperExporter: '輸出者 / 荷送人 (SHIPPER)',
     consignee: '荷受人 / 買主 (CONSIGNEE)',
@@ -171,6 +174,7 @@ export const DOC_TEXT: Record<DocLanguage, DocDictionary> = {
   zh: {
     commercialInvoice: 'COMMERCIAL INVOICE（商业发票）',
     packingList: 'PACKING LIST（装箱单）',
+    salesContract: 'CONTRACT（销售合同 / PI）',
     caseMarkSheet: 'CASE MARK（外箱唛头标签）',
     shipperExporter: '发货人 / 出口商 (SHIPPER)',
     consignee: '收货人 / 买方 (CONSIGNEE)',

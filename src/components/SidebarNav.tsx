@@ -4,6 +4,7 @@ import {
   Printer,
   Database,
   History,
+  Settings,
   X,
   LogOut,
   Cloud,
@@ -71,6 +72,11 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t.navHistory,
       icon: <History className="w-4 h-4 shrink-0" />,
       count: ordersCount,
+    },
+    {
+      id: 'settings',
+      label: t.navSettings,
+      icon: <Settings className="w-4 h-4 shrink-0" />,
     },
   ];
 

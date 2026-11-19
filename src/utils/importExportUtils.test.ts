@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as XLSX from 'xlsx';
+import XlsxStylePkg from 'xlsx-js-style';
+import PizZipPkg from 'pizzip';
 import { createInitialErpState } from '../data/seedData';
 import {
   applyCustomerPricingToItems,
@@ -14,6 +15,21 @@ import {
   resolveCustomerProductPrice,
   resolveCustomerProductPricing,
 } from './importExportUtils';
+import {
+  arrayBufferToBase64,
+  buildDocxBufferFromCustomTemplate,
+  buildWorkbookFromCustomXlsxTemplate,
+  findMatchingCustomerTemplate,
+} from './templateExportUtils';
+import { buildContractDocxBuffer } from './contractDocxExport';
+import { createDefaultContractSettings } from './contractDefaults';
+import type { CustomerDocumentTemplate } from '../types/erp';
+
+type XlsxModule = typeof import('xlsx-js-style');
+const XLSX: XlsxModule =
+  (XlsxStylePkg as unknown as { default?: XlsxModule }).default ?? XlsxStylePkg;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const PizZip: typeof PizZipPkg = (PizZipPkg as any).default ?? PizZipPkg;
 
 test('resolveCustomerProductPrice uses custom price when bound and falls back to base unitPrice', () => {
   const seed = createInitialErpState();
@@ -206,7 +222,7 @@ test('resolveCustomerProductPricing enforces quantity tier precedence and conver
   assert.equal(rVipFlat.unitPrice, 20);
 });
 
-test('buildFormalDocumentWorkbook creates formal 2-sheet INVOICE and PACKING LIST workbook with Fax, Tax ID, Exchange Rate, and merges', () => {
+test('buildFormalDocumentWorkbook creates styled 3-sheet INVOICE, PACKING LIST, CONTRACT workbook preserving docOverrides & specialFields', () => {
   const seed = createInitialErpState();
   const order = {
     ...seed.orders[0],
@@ -214,6 +230,16 @@ test('buildFormalDocumentWorkbook creates formal 2-sheet INVOICE and PACKING LIS
     exchangeRate: 152,
     palletCount: 1,
     emptyCartons: 11,
+    docOverrides: {
+      'inv.remarks': 'CUSTOM WYSIWYG REMARK 999',
+    },
+    docSpecialFields: {
+      showCompanyStamp: true,
+      showSignature: true,
+      showDisclaimer: true,
+      disclaimerText: 'Valid for {invoiceNo} ({currency})',
+      customNote: 'Handle pallets gently.',
+    },
   };
   const customer = {
     ...seed.customers.find((c) => c.id === order.customerId)!,
@@ -232,7 +258,13 @@ test('buildFormalDocumentWorkbook creates formal 2-sheet INVOICE and PACKING LIS
     docLang: 'en',
   });
 
-  assert.deepEqual(wb.SheetNames, ['INVOICE', 'PACKING LIST']);
+  assert.deepEqual(wb.SheetNames, ['INVOICE', 'PACKING LIST', 'CONTRACT']);
+  // Verify xlsx-js-style metadata is populated
+  const invSheetPre = wb.Sheets['INVOICE'];
+  assert.ok(invSheetPre['A1']?.s?.font?.bold);
+  assert.ok(Array.isArray(invSheetPre['!cols']) && invSheetPre['!cols'].length === 11);
+  assert.ok(Array.isArray(invSheetPre['!rows']) && invSheetPre['!rows'].length > 10);
+
   const bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
   const parsed = XLSX.read(bytes, { type: 'array' });
 
@@ -244,12 +276,193 @@ test('buildFormalDocumentWorkbook creates formal 2-sheet INVOICE and PACKING LIS
   assert.match(invText, /Tax ID : DE-TAX-888999/);
   assert.match(invText, /\*Exchange Rate : 1 USD = 152 JPY/);
   assert.match(invText, /1 pallets \(.*cartons total \+ 11 empty carton\)/);
-  assert.match(invText, /Bank Information/);
+  assert.match(invText, /CUSTOM WYSIWYG REMARK 999/);
+  assert.match(invText, /OFFICIAL SEAL/);
+  assert.match(invText, /Valid for .* \(USD\)/);
+  assert.match(invText, /Handle pallets gently\./);
 
   const plText = XLSX.utils.sheet_to_csv(parsed.Sheets['PACKING LIST']);
   assert.match(plText, /PACKING LIST/);
   assert.match(plText, /DELIVER TO :/);
   assert.match(plText, /Pallet No\.,Ctn\. No\.,Item No\.,Type/);
   assert.ok((parsed.Sheets['PACKING LIST']['!merges']?.length ?? 0) > 5);
+
+  const contractText = XLSX.utils.sheet_to_csv(parsed.Sheets['CONTRACT']);
+  assert.match(contractText, /CONTRACT/);
+  assert.match(contractText, /THE BUYERS/);
+  assert.match(contractText, /THE SELLERS/);
+  assert.match(contractText, /TOTAL VALUE/);
+  assert.match(contractText, /Ex-works Total/);
 });
+
+test('custom customer .xlsx and .docx templates match scope and populate mapped cells/tags', () => {
+  const seed = createInitialErpState();
+  const order = seed.orders[0];
+  const customer = seed.customers.find((c) => c.id === order.customerId)!;
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  // Build synthetic xlsx template with {invoiceNo} placeholder + empty B10 & D20 targets
+  const tplWb = XLSX.utils.book_new();
+  const tplWs = XLSX.utils.aoa_to_sheet([
+    ['Template Inv:', '{invoiceNo}'],
+    ['', ''],
+  ]);
+  tplWs['B10'] = {
+    v: 'PLACEHOLDER',
+    t: 's',
+    s: { fill: { patternType: 'solid', fgColor: { rgb: 'EEF2F6' } }, font: { bold: true } },
+  };
+  tplWs['!ref'] = 'A1:K30';
+  XLSX.utils.book_append_sheet(tplWb, tplWs, 'CustomInv');
+  const xlsxBuf = XLSX.write(tplWb, { type: 'array', bookType: 'xlsx', cellStyles: true }) as ArrayBuffer;
+
+  const xlsxTemplate: CustomerDocumentTemplate = {
+    id: 'tpl-xlsx-1',
+    name: 'VIP Excel Invoice',
+    fileName: 'vip-inv.xlsx',
+    fileType: 'xlsx',
+    docScope: 'invoice',
+    fileBase64: arrayBufferToBase64(xlsxBuf),
+    itemsStartRow: 15,
+    mappings: [
+      { id: 'm1', systemField: 'customerName', targetRef: 'B10' },
+      { id: 'm2', systemField: 'totalAmount', targetRef: 'D20' },
+    ],
+    uploadedAt: '2026-11-18T00:00:00.000Z',
+  };
+
+  const custWithTpls = {
+    ...customer,
+    documentTemplates: [xlsxTemplate],
+  };
+
+  assert.equal(findMatchingCustomerTemplate(custWithTpls, 'invoice')?.id, 'tpl-xlsx-1');
+  assert.equal(findMatchingCustomerTemplate(custWithTpls, 'packing'), undefined);
+
+  const outWb = buildWorkbookFromCustomXlsxTemplate(order, xlsxTemplate, {
+    customer: custWithTpls,
+    supplier,
+    bank,
+    products: seed.products,
+    docLang: 'en',
+  });
+  const outSheet = outWb.Sheets['CustomInv'];
+  assert.equal(outSheet['B1']?.v, order.invoiceNo);
+  assert.equal(outSheet['B10']?.v, customer.name);
+  assert.ok(outSheet['B10']?.s, 'existing cell style object should be preserved');
+  assert.ok(String(outSheet['D20']?.v ?? '').length > 0);
+  assert.equal(outSheet['B15']?.v, order.items[0].sku);
+
+  // Build synthetic docx template via PizZip and verify docxtemplater fill
+  const zip = new PizZip();
+  zip.file(
+    '[Content_Types].xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+  );
+  zip.file(
+    '_rels/.rels',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+  );
+  zip.file(
+    'word/document.xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Buyer: {CUSTOM_BUYER} / Inv: {invoiceNo} / Total: {totalAmount}</w:t></w:r></w:p></w:body></w:document>',
+  );
+  const docxArr = zip.generate({ type: 'uint8array' });
+  const docxTemplate: CustomerDocumentTemplate = {
+    id: 'tpl-docx-1',
+    name: 'VIP Word Contract',
+    fileName: 'vip-contract.docx',
+    fileType: 'docx',
+    docScope: 'contract',
+    fileBase64: arrayBufferToBase64(docxArr.buffer as ArrayBuffer),
+    mappings: [
+      { id: 'dm1', systemField: 'customerName', targetRef: '{CUSTOM_BUYER}' },
+    ],
+    uploadedAt: '2026-11-18T00:00:00.000Z',
+  };
+
+  const renderedDocxBytes = buildDocxBufferFromCustomTemplate(order, docxTemplate, {
+    customer: custWithTpls,
+    supplier,
+    bank,
+    products: seed.products,
+    docLang: 'en',
+  });
+  const renderedZip = new PizZip(renderedDocxBytes);
+  const renderedXml = renderedZip.file('word/document.xml')?.asText() ?? '';
+  assert.ok(renderedXml.includes(customer.name));
+  assert.ok(renderedXml.includes(order.invoiceNo));
+});
+
+test('buildContractDocxBuffer generates valid standalone Contract .docx preserving bilingual clauses and WYSIWYG docOverrides across Word and Excel', async () => {
+  const seed = createInitialErpState();
+  const settings = createDefaultContractSettings();
+  const order = {
+    ...seed.orders[0],
+    palletCount: 2,
+    docOverrides: {
+      'contract.buyerPhone': '+86-411-9999-8888',
+      'contract.preambleZh': '定制前言条款 WYSIWYG 校验文本',
+      'contract.clause.1.zh': '定制条款1内容：DAP 客户指定仓库交货。',
+      'contract.totalWords': 'JPY ONE MILLION CUSTOM TEST ONLY.',
+    },
+    docSpecialFields: {
+      showCompanyStamp: true,
+      showSignature: true,
+      showDisclaimer: true,
+      disclaimerText: 'Contract disclaimer for {invoiceNo}',
+      customNote: 'Word special note XYZ',
+    },
+  };
+  const customer = seed.customers.find((c) => c.id === order.customerId)!;
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  const docxBytes = await buildContractDocxBuffer(order, {
+    customer,
+    billToCustomer: customer,
+    supplier,
+    products: seed.products,
+    docLang: 'en',
+    contractSettings: settings,
+  });
+
+  assert.ok(docxBytes instanceof Uint8Array && docxBytes.length > 2000);
+  // ZIP magic bytes 'PK'
+  assert.equal(docxBytes[0], 0x50);
+  assert.equal(docxBytes[1], 0x4b);
+
+  const zip = new PizZip(docxBytes);
+  const docXml = zip.file('word/document.xml')?.asText() ?? '';
+  assert.ok(docXml.includes('C O N T R A C T'));
+  assert.ok(docXml.includes('NAME OF COMMODITY'));
+  assert.ok(docXml.includes('+86-411-9999-8888'));
+  assert.ok(docXml.includes('定制前言条款 WYSIWYG 校验文本'));
+  assert.ok(docXml.includes('定制条款1内容：DAP 客户指定仓库交货。'));
+  assert.ok(docXml.includes('JPY ONE MILLION CUSTOM TEST ONLY.'));
+  assert.ok(docXml.includes('ARBITRATION'));
+  assert.ok(docXml.includes('AUTHORIZED SEAL'));
+  assert.ok(docXml.includes(`Contract disclaimer for ${order.invoiceNo}`));
+  assert.ok(docXml.includes('Word special note XYZ'));
+  assert.ok(!docXml.includes('undefined'));
+  assert.ok(!docXml.includes('NaN'));
+
+  // Verify Excel CONTRACT sheet also receives the exact same WYSIWYG overrides
+  const wb = buildFormalDocumentWorkbook(order, {
+    customer,
+    billToCustomer: customer,
+    supplier,
+    bank,
+    products: seed.products,
+    docLang: 'en',
+    contractSettings: settings,
+  });
+  const contractCsv = XLSX.utils.sheet_to_csv(wb.Sheets['CONTRACT']);
+  assert.match(contractCsv, /\+86-411-9999-8888/);
+  assert.match(contractCsv, /定制前言条款 WYSIWYG 校验文本/);
+  assert.match(contractCsv, /定制条款1内容：DAP 客户指定仓库交货。/);
+  assert.match(contractCsv, /JPY ONE MILLION CUSTOM TEST ONLY\./);
+});
+
 

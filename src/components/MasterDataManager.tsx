@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   Download,
   FileSpreadsheet,
+  FileText,
   Pencil,
   Plus,
   Search,
@@ -14,13 +15,16 @@ import type {
   BankAccount,
   CurrencyCode,
   Customer,
+  CustomerDocumentTemplate,
   CustomerProductPrice,
+  DocTemplateScope,
   IncotermCode,
   LogisticsProvider,
   MasterTab,
   PriceTier,
   Product,
   Supplier,
+  TemplateSystemFieldKey,
   TransportMode,
 } from '../types/erp';
 import type { UiDictionary } from '../i18n/uiTranslations';
@@ -30,6 +34,10 @@ import {
   triggerProductTemplateDownload,
   type ProductImportResult,
 } from '../utils/importExportUtils';
+import {
+  inspectUploadedTemplate,
+  TEMPLATE_SYSTEM_FIELDS,
+} from '../utils/templateExportUtils';
 
 interface MasterDataManagerProps {
   customers: Customer[];
@@ -86,11 +94,18 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const importFileRef = useRef<HTMLInputElement | null>(null);
+  const templateFileRef = useRef<HTMLInputElement | null>(null);
   const [importPreview, setImportPreview] = useState<ProductImportResult | null>(
     null,
   );
   const [importSubmitting, setImportSubmitting] = useState(false);
   const [importToast, setImportToast] = useState<string | null>(null);
+  const [templateUploadError, setTemplateUploadError] = useState<string | null>(
+    null,
+  );
+  const [detectedHintsByTpl, setDetectedHintsByTpl] = useState<
+    Record<string, { placeholders: string[]; cells: string[] }>
+  >({});
 
   const tabs: { id: MasterTab; label: string; count: number }[] = [
     { id: 'customers', label: t.masterCustomers, count: customers.length },
@@ -175,9 +190,13 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
     setCustomPriceValue(
       existingForFirst?.unitPrice ?? firstProd?.unitPrice ?? 0,
     );
+    setTemplateUploadError(null);
     setEditingCustomer({
       ...cust,
       customPrices: Array.isArray(cust.customPrices) ? cust.customPrices : [],
+      documentTemplates: Array.isArray(cust.documentTemplates)
+        ? cust.documentTemplates
+        : [],
     });
   };
 
@@ -199,6 +218,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
         defaultIncoterm: 'FOB',
         notifyParty: '',
         customPrices: [],
+        documentTemplates: [],
       });
     } else if (activeTab === 'suppliers') {
       setEditingSupplier({
@@ -336,6 +356,93 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
       ...editingCustomer,
       customPrices: (editingCustomer.customPrices ?? []).map((cp) =>
         cp.productId === productId ? { ...cp, tieredPrices: tiers } : cp,
+      ),
+    });
+  };
+
+  const handleTemplateFileSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingCustomer) return;
+    setTemplateUploadError(null);
+    try {
+      const existing = editingCustomer.documentTemplates ?? [];
+      if (existing.length >= 3) {
+        setTemplateUploadError('每个客户最多保存 3 个云端专属模板');
+        return;
+      }
+      const res = await inspectUploadedTemplate(file);
+      if (res.error) {
+        setTemplateUploadError(res.error);
+        return;
+      }
+      const tplId = `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+      const knownFields = new Set(TEMPLATE_SYSTEM_FIELDS.map((f) => f.key));
+      const autoMappings = res.detectedPlaceholders
+        .filter((tag) => knownFields.has(tag as TemplateSystemFieldKey))
+        .map((tag, idx) => ({
+          id: `map-${Date.now()}-${idx}`,
+          systemField: tag as TemplateSystemFieldKey,
+          targetRef: `{${tag}}`,
+        }));
+      const newTpl: CustomerDocumentTemplate = {
+        id: tplId,
+        name: res.fileName.replace(/\.(xlsx|docx)$/i, ''),
+        fileName: res.fileName,
+        fileType: res.fileType,
+        docScope: 'all',
+        fileBase64: res.fileBase64,
+        mappings:
+          autoMappings.length > 0
+            ? autoMappings
+            : [
+                {
+                  id: `map-${Date.now()}-0`,
+                  systemField: 'customerName',
+                  targetRef: res.fileType === 'xlsx' ? 'B10' : '{customerName}',
+                },
+              ],
+        itemsStartRow: res.fileType === 'xlsx' ? 15 : undefined,
+        uploadedAt: new Date().toISOString(),
+      };
+      setDetectedHintsByTpl((prev) => ({
+        ...prev,
+        [tplId]: {
+          placeholders: res.detectedPlaceholders,
+          cells: res.detectedCells,
+        },
+      }));
+      setEditingCustomer({
+        ...editingCustomer,
+        documentTemplates: [...existing, newTpl],
+      });
+    } catch {
+      setTemplateUploadError('模板解析失败，请检查文件是否损坏');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleUpdateCustomerTemplate = (
+    tplId: string,
+    patch: Partial<CustomerDocumentTemplate>,
+  ) => {
+    if (!editingCustomer) return;
+    setEditingCustomer({
+      ...editingCustomer,
+      documentTemplates: (editingCustomer.documentTemplates ?? []).map((tpl) =>
+        tpl.id === tplId ? { ...tpl, ...patch } : tpl,
+      ),
+    });
+  };
+
+  const handleRemoveCustomerTemplate = (tplId: string) => {
+    if (!editingCustomer) return;
+    setEditingCustomer({
+      ...editingCustomer,
+      documentTemplates: (editingCustomer.documentTemplates ?? []).filter(
+        (tpl) => tpl.id !== tplId,
       ),
     });
   };
@@ -486,10 +593,18 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                         {c.defaultIncoterm} · {c.defaultCurrency}
                       </div>
                       {(c.customPrices?.length ?? 0) > 0 && (
-                        <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200 rounded">
+                        <div className="inline-flex items-center gap-1 mt-1 mr-1.5 px-1.5 py-0.5 text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200 rounded">
                           <Tag className="w-3 h-3" />
                           <span>
                             {c.customPrices!.length} {t.customPricingBadge}
+                          </span>
+                        </div>
+                      )}
+                      {(c.documentTemplates?.length ?? 0) > 0 && (
+                        <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 text-[11px] font-medium bg-blue-50 text-blue-800 border border-blue-200 rounded">
+                          <FileText className="w-3 h-3" />
+                          <span>
+                            {c.documentTemplates!.length} {t.tplBadgeUnit}
                           </span>
                         </div>
                       )}
@@ -1015,6 +1130,234 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                   })}
                 </div>
               )}
+            </div>
+
+            {/* Customer Custom Document Templates (.xlsx / .docx) & Field Mapping */}
+            <div className="pt-3 border-t border-slate-200 space-y-2.5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+                    <FileText className="w-3.5 h-3.5 text-blue-700" />
+                    <span>{t.custTemplatesTitle}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                    {t.custTemplatesHint}
+                  </p>
+                </div>
+                <input
+                  ref={templateFileRef}
+                  type="file"
+                  accept=".xlsx,.docx"
+                  onChange={handleTemplateFileSelected}
+                  className="sr-only"
+                  aria-label={t.btnUploadTemplate}
+                />
+                <button
+                  type="button"
+                  onClick={() => templateFileRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 whitespace-nowrap"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{t.btnUploadTemplate}</span>
+                </button>
+              </div>
+
+              {templateUploadError && (
+                <div
+                  role="alert"
+                  className="px-2.5 py-2 text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 rounded"
+                >
+                  {templateUploadError}
+                </div>
+              )}
+
+              {(editingCustomer.documentTemplates ?? []).map((tpl) => {
+                const hints = detectedHintsByTpl[tpl.id];
+                return (
+                  <div
+                    key={tpl.id}
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2.5 text-xs"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="px-1.5 py-0.5 text-[10px] font-mono-tabular font-bold uppercase bg-white border border-slate-300 rounded text-slate-700">
+                          {tpl.fileType}
+                        </span>
+                        <input
+                          type="text"
+                          aria-label={t.tplNameLabel}
+                          value={tpl.name}
+                          onChange={(e) =>
+                            handleUpdateCustomerTemplate(tpl.id, {
+                              name: e.target.value,
+                            })
+                          }
+                          className="h-7 px-2 text-xs font-semibold bg-white border border-slate-300 rounded flex-1 min-w-[120px]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCustomerTemplate(tpl.id)}
+                        aria-label={`${t.btnDelete} ${tpl.name}`}
+                        className="p-1 text-slate-400 hover:text-red-600 rounded"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                          {t.tplScopeLabel}
+                        </label>
+                        <select
+                          value={tpl.docScope}
+                          onChange={(e) =>
+                            handleUpdateCustomerTemplate(tpl.id, {
+                              docScope: e.target.value as DocTemplateScope,
+                            })
+                          }
+                          className="w-full h-7 px-2 text-xs bg-white border border-slate-300 rounded"
+                        >
+                          <option value="all">{t.tplScopeAll}</option>
+                          <option value="invoice">{t.tplScopeInvoice}</option>
+                          <option value="packing">{t.tplScopePacking}</option>
+                          <option value="contract">{t.tplScopeContract}</option>
+                        </select>
+                      </div>
+                      {tpl.fileType === 'xlsx' && (
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                            {t.tplStartRowLabel}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={tpl.itemsStartRow ?? 15}
+                            onChange={(e) =>
+                              handleUpdateCustomerTemplate(tpl.id, {
+                                itemsStartRow: Math.max(
+                                  0,
+                                  Math.floor(Number(e.target.value) || 0),
+                                ),
+                              })
+                            }
+                            className="w-full h-7 px-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {hints &&
+                      (hints.placeholders.length > 0 ||
+                        hints.cells.length > 0) && (
+                        <div className="text-[11px] text-slate-500">
+                          <span className="font-medium">
+                            {t.tplDetectedHint}{' '}
+                          </span>
+                          <span className="font-mono-tabular text-slate-700">
+                            {[
+                              ...hints.placeholders.map((p) => `{${p}}`),
+                              ...hints.cells.slice(0, 8),
+                            ].join(', ')}
+                          </span>
+                        </div>
+                      )}
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-700">
+                          {t.tplMappingsTitle} ({tpl.mappings.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateCustomerTemplate(tpl.id, {
+                              mappings: [
+                                ...tpl.mappings,
+                                {
+                                  id: `map-${Date.now()}-${tpl.mappings.length}`,
+                                  systemField: 'totalAmount',
+                                  targetRef:
+                                    tpl.fileType === 'xlsx'
+                                      ? 'D20'
+                                      : '{totalAmount}',
+                                },
+                              ],
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>{t.tplAddMapping}</span>
+                        </button>
+                      </div>
+
+                      {tpl.mappings.map((m, mIdx) => (
+                        <div
+                          key={m.id}
+                          className="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5"
+                        >
+                          <select
+                            aria-label={`${t.tplSystemField} ${mIdx + 1}`}
+                            value={m.systemField}
+                            onChange={(e) =>
+                              handleUpdateCustomerTemplate(tpl.id, {
+                                mappings: tpl.mappings.map((entry) =>
+                                  entry.id === m.id
+                                    ? {
+                                        ...entry,
+                                        systemField: e.target
+                                          .value as TemplateSystemFieldKey,
+                                      }
+                                    : entry,
+                                ),
+                              })
+                            }
+                            className="h-7 px-1.5 text-[11px] bg-white border border-slate-300 rounded"
+                          >
+                            {TEMPLATE_SYSTEM_FIELDS.map((f) => (
+                              <option key={f.key} value={f.key}>
+                                {f.labelZh} ({f.key})
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            aria-label={`${t.tplTargetRef} ${mIdx + 1}`}
+                            placeholder="B10 / {CLIENT}"
+                            value={m.targetRef}
+                            onChange={(e) =>
+                              handleUpdateCustomerTemplate(tpl.id, {
+                                mappings: tpl.mappings.map((entry) =>
+                                  entry.id === m.id
+                                    ? { ...entry, targetRef: e.target.value }
+                                    : entry,
+                                ),
+                              })
+                            }
+                            className="h-7 px-2 text-[11px] font-mono-tabular bg-white border border-slate-300 rounded"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleUpdateCustomerTemplate(tpl.id, {
+                                mappings: tpl.mappings.filter(
+                                  (entry) => entry.id !== m.id,
+                                ),
+                              })
+                            }
+                            aria-label={`${t.btnDelete} mapping ${mIdx + 1}`}
+                            className="p-1 text-slate-400 hover:text-red-600 rounded"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <ModalFooter

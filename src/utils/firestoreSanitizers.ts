@@ -1,10 +1,16 @@
 import type {
   AuditLogEntry,
   BankAccount,
+  ContractClauseItem,
+  ContractSettings,
   CurrencyCode,
   Customer,
+  CustomerDocumentTemplate,
   CustomerProductPrice,
   DocLanguage,
+  DocSpecialFields,
+  DocTemplateFileType,
+  DocTemplateScope,
   ExportOrder,
   IncotermCode,
   LogisticsProvider,
@@ -13,10 +19,13 @@ import type {
   PriceTier,
   Product,
   Supplier,
+  TemplateFieldMapping,
+  TemplateSystemFieldKey,
   TransportMode,
   UiLanguage,
 } from '../types/erp';
 import { resolveEffectiveExchangeRate } from './exportCalculations';
+import { createDefaultContractSettings } from './contractDefaults';
 
 export const BLUEPRINT_LIMITS = {
   ID_MAX: 128,
@@ -24,6 +33,12 @@ export const BLUEPRINT_LIMITS = {
   SHORT_MAX: 80,
   MEDIUM_MAX: 240,
   LONG_MAX: 1000,
+  OVERRIDE_VAL_MAX: 2000,
+  MAX_DOC_OVERRIDES: 60,
+  MAX_TEMPLATES_PER_CUSTOMER: 3,
+  MAX_TEMPLATE_BASE64: 450000,
+  MAX_TEMPLATE_MAPPINGS: 40,
+  MAX_CONTRACT_CLAUSES: 20,
   INVOICE_MAX: 100,
   DATE_MAX: 40,
   TIMESTAMP_STR_MAX: 64,
@@ -52,6 +67,8 @@ const VALID_INCOTERMS: IncotermCode[] = [
 const VALID_MODES: TransportMode[] = ['SEA', 'AIR', 'EXPRESS', 'LAND'];
 const VALID_UI_LANGS: UiLanguage[] = ['zh', 'ja', 'en'];
 const VALID_DOC_LANGS: DocLanguage[] = ['en', 'ja', 'zh'];
+const VALID_TEMPLATE_FILE_TYPES: DocTemplateFileType[] = ['xlsx', 'docx'];
+const VALID_TEMPLATE_SCOPES: DocTemplateScope[] = ['invoice', 'packing', 'contract', 'all'];
 
 export function isValidFirestoreId(id: unknown): id is string {
   return (
@@ -151,6 +168,185 @@ export function sanitizeCustomerCustomPrices(
   return Array.from(deduped.values());
 }
 
+export function sanitizeCustomerTemplates(
+  templates: unknown,
+): CustomerDocumentTemplate[] {
+  if (!Array.isArray(templates)) return [];
+  const result: CustomerDocumentTemplate[] = [];
+  for (let i = 0; i < templates.length; i++) {
+    const t = templates[i];
+    if (!t || typeof t !== 'object') continue;
+    const raw = t as Record<string, unknown>;
+    const fileType = VALID_TEMPLATE_FILE_TYPES.includes(raw.fileType as DocTemplateFileType)
+      ? (raw.fileType as DocTemplateFileType)
+      : 'xlsx';
+    const docScope = VALID_TEMPLATE_SCOPES.includes(raw.docScope as DocTemplateScope)
+      ? (raw.docScope as DocTemplateScope)
+      : 'all';
+    const fileBase64 = clampStr(raw.fileBase64, BLUEPRINT_LIMITS.MAX_TEMPLATE_BASE64);
+    if (!fileBase64) continue;
+    const rawMappings = Array.isArray(raw.mappings) ? raw.mappings : [];
+    const mappings: TemplateFieldMapping[] = [];
+    for (let mIdx = 0; mIdx < rawMappings.length; mIdx++) {
+      const m = rawMappings[mIdx];
+      if (!m || typeof m !== 'object') continue;
+      const mObj = m as Record<string, unknown>;
+      const targetRef = clampStr(mObj.targetRef, BLUEPRINT_LIMITS.SHORT_MAX).trim();
+      const systemField = clampStr(
+        mObj.systemField,
+        BLUEPRINT_LIMITS.SHORT_MAX,
+      ).trim() as TemplateSystemFieldKey;
+      if (!systemField || !targetRef) continue;
+      mappings.push({
+        id: sanitizeId(String(mObj.id ?? ''), `map-${mIdx}`),
+        systemField,
+        targetRef,
+      });
+      if (mappings.length >= BLUEPRINT_LIMITS.MAX_TEMPLATE_MAPPINGS) break;
+    }
+    const itemsStartRowRaw = Number(raw.itemsStartRow);
+    const itemsStartRow =
+      Number.isFinite(itemsStartRowRaw) && itemsStartRowRaw > 0
+        ? Math.min(500, Math.round(itemsStartRowRaw))
+        : 0;
+    result.push({
+      id: sanitizeId(String(raw.id ?? ''), `tpl-${i}`),
+      name: clampNonEmptyStr(raw.name, BLUEPRINT_LIMITS.MEDIUM_MAX, `Template ${i + 1}`),
+      fileName: clampNonEmptyStr(raw.fileName, BLUEPRINT_LIMITS.MEDIUM_MAX, `template.${fileType}`),
+      fileType,
+      docScope,
+      fileBase64,
+      mappings,
+      itemsStartRow,
+      uploadedAt: clampStr(
+        raw.uploadedAt,
+        BLUEPRINT_LIMITS.TIMESTAMP_STR_MAX,
+        new Date().toISOString(),
+      ),
+    });
+    if (result.length >= BLUEPRINT_LIMITS.MAX_TEMPLATES_PER_CUSTOMER) break;
+  }
+  return result;
+}
+
+export function sanitizeDocOverrides(
+  overrides: unknown,
+): Record<string, string> {
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) {
+    return {};
+  }
+  const clean: Record<string, string> = {};
+  let count = 0;
+  for (const [k, v] of Object.entries(overrides as Record<string, unknown>)) {
+    const cleanKey = clampStr(k, BLUEPRINT_LIMITS.SHORT_MAX).trim();
+    if (!cleanKey) continue;
+    clean[cleanKey] = clampStr(v, BLUEPRINT_LIMITS.OVERRIDE_VAL_MAX);
+    count += 1;
+    if (count >= BLUEPRINT_LIMITS.MAX_DOC_OVERRIDES) break;
+  }
+  return clean;
+}
+
+export function sanitizeDocSpecialFields(
+  fields: unknown,
+): DocSpecialFields {
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+    return {
+      showCompanyStamp: false,
+      showSignature: true,
+      showDisclaimer: false,
+      disclaimerText: '',
+      customNote: '',
+    };
+  }
+  const raw = fields as Record<string, unknown>;
+  return {
+    showCompanyStamp: Boolean(raw.showCompanyStamp),
+    showSignature: raw.showSignature === undefined ? true : Boolean(raw.showSignature),
+    showDisclaimer: Boolean(raw.showDisclaimer),
+    disclaimerText: clampStr(raw.disclaimerText, BLUEPRINT_LIMITS.LONG_MAX),
+    customNote: clampStr(raw.customNote, BLUEPRINT_LIMITS.LONG_MAX),
+  };
+}
+
+export function sanitizeContractSettings(
+  settings: unknown,
+): ContractSettings {
+  const defaults = createDefaultContractSettings();
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return defaults;
+  }
+  const raw = settings as Record<string, unknown>;
+  const rawClauses = Array.isArray(raw.clauses) ? raw.clauses : defaults.clauses;
+  const clauses: ContractClauseItem[] = rawClauses
+    .slice(0, BLUEPRINT_LIMITS.MAX_CONTRACT_CLAUSES)
+    .map((c, idx) => {
+      const obj = (c && typeof c === 'object' ? c : {}) as Record<string, unknown>;
+      return {
+        id: sanitizeId(String(obj.id ?? ''), `clause-${idx + 1}`),
+        number: Math.max(1, Math.round(nonNegNum(obj.number, idx + 1))),
+        titleZh: clampStr(obj.titleZh, BLUEPRINT_LIMITS.MEDIUM_MAX),
+        titleEn: clampStr(obj.titleEn, BLUEPRINT_LIMITS.MEDIUM_MAX),
+        bodyZh: clampStr(obj.bodyZh, BLUEPRINT_LIMITS.OVERRIDE_VAL_MAX),
+        bodyEn: clampStr(obj.bodyEn, BLUEPRINT_LIMITS.OVERRIDE_VAL_MAX),
+      };
+    });
+
+  return {
+    defaultDeliveryTime: clampStr(
+      raw.defaultDeliveryTime,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultDeliveryTime,
+    ),
+    defaultDeliveryTimeEn: clampStr(
+      raw.defaultDeliveryTimeEn,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultDeliveryTimeEn,
+    ),
+    defaultPackingClause: clampStr(
+      raw.defaultPackingClause,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultPackingClause,
+    ),
+    defaultPackingClauseEn: clampStr(
+      raw.defaultPackingClauseEn,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultPackingClauseEn,
+    ),
+    defaultPaymentClause: clampStr(
+      raw.defaultPaymentClause,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultPaymentClause,
+    ),
+    defaultPaymentClauseEn: clampStr(
+      raw.defaultPaymentClauseEn,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultPaymentClauseEn,
+    ),
+    defaultArbitrationClause: clampStr(
+      raw.defaultArbitrationClause,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultArbitrationClause,
+    ),
+    defaultArbitrationClauseEn: clampStr(
+      raw.defaultArbitrationClauseEn,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultArbitrationClauseEn,
+    ),
+    defaultDisclaimerText: clampStr(
+      raw.defaultDisclaimerText,
+      BLUEPRINT_LIMITS.LONG_MAX,
+      defaults.defaultDisclaimerText,
+    ),
+    companyStampLabel: clampStr(
+      raw.companyStampLabel,
+      BLUEPRINT_LIMITS.MEDIUM_MAX,
+      defaults.companyStampLabel,
+    ),
+    clauses: clauses.length > 0 ? clauses : defaults.clauses,
+  };
+}
+
 export function sanitizeCustomerPayload(c: Customer, ownerId: string) {
   return {
     id: sanitizeId(c.id, 'cust'),
@@ -168,6 +364,7 @@ export function sanitizeCustomerPayload(c: Customer, ownerId: string) {
     defaultIncoterm: clampIncoterm(c.defaultIncoterm),
     notifyParty: clampStr(c.notifyParty, BLUEPRINT_LIMITS.LONG_MAX),
     customPrices: sanitizeCustomerCustomPrices(c.customPrices),
+    documentTemplates: sanitizeCustomerTemplates(c.documentTemplates),
   };
 }
 
@@ -357,6 +554,8 @@ export function sanitizeOrderPayload(o: ExportOrder, ownerId: string) {
       importDutyTaxCost: nonNegNum(o.costs?.importDutyTaxCost, 0),
     },
     remarks: clampStr(o.remarks, BLUEPRINT_LIMITS.LONG_MAX),
+    docOverrides: sanitizeDocOverrides(o.docOverrides),
+    docSpecialFields: sanitizeDocSpecialFields(o.docSpecialFields),
     orderCreatedAt: clampStr(o.createdAt, BLUEPRINT_LIMITS.TIMESTAMP_STR_MAX),
     orderUpdatedAt: clampStr(o.updatedAt, BLUEPRINT_LIMITS.TIMESTAMP_STR_MAX),
   };

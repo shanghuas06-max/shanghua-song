@@ -8,6 +8,14 @@ import type {
   TransportMode,
 } from '../types/erp';
 
+export const CARTON_TARE_WEIGHT_KG = 0.65;
+export const PALLET_WEIGHT_KG = 17;
+export const PALLET_LENGTH_CM = 110;
+export const PALLET_WIDTH_CM = 110;
+export const PALLET_HEIGHT_CM = 14;
+export const PALLET_VOLUME_CBM =
+  (PALLET_LENGTH_CM * PALLET_WIDTH_CM * PALLET_HEIGHT_CM) / 1_000_000;
+
 export const DEFAULT_EXCHANGE_RATES: Record<CurrencyCode, number> = {
   JPY: 1,
   USD: 150,
@@ -125,8 +133,13 @@ export interface OrderCalculationSummary {
   lineItems: CalculatedLineItem[];
   totalQuantity: number;
   totalCartons: number;
+  palletCount: number;
   totalNetWeightKg: number;
+  cartonsGrossWeightKg: number;
+  palletsGrossWeightKg: number;
   totalGrossWeightKg: number;
+  cartonsCbm: number;
+  palletsCbm: number;
   totalCbm: number;
   goodsSubtotal: number;
   packingHandlingCost: number;
@@ -268,14 +281,18 @@ export function calculateOrderSummary(
   costs: OrderCosts,
   incoterm: IncotermCode,
   currency: CurrencyCode,
+  palletCount = 0,
 ): OrderCalculationSummary {
+  const safePalletCount = Math.max(0, Math.round(Number(palletCount) || 0));
+
   const lineItems: CalculatedLineItem[] = items.map((item) => {
     const qty = Math.max(0, Number(item.quantity) || 0);
     const price = Math.max(0, Number(item.unitPrice) || 0);
     const cartons = Math.max(0, Number(item.cartons) || 0);
     const amount = roundByCurrency(qty * price, currency);
     const netWeightKg = roundWeight(qty * Math.max(0, Number(item.unitNetWeightKg) || 0));
-    const grossWeightKg = roundWeight(qty * Math.max(0, Number(item.unitGrossWeightKg) || 0));
+    // Per-carton gross weight = carton net weight + 0.65 kg; line item G.W. = netWeightKg + cartons * 0.65 kg
+    const grossWeightKg = roundWeight(netWeightKg + cartons * CARTON_TARE_WEIGHT_KG);
     const cartonVolumeM3 =
       (Math.max(0, Number(item.cartonLengthCm) || 0) *
         Math.max(0, Number(item.cartonWidthCm) || 0) *
@@ -302,10 +319,19 @@ export function calculateOrderSummary(
   const totalNetWeightKg = roundWeight(
     lineItems.reduce((acc, l) => acc + l.netWeightKg, 0),
   );
-  const totalGrossWeightKg = roundWeight(
+  const cartonsGrossWeightKg = roundWeight(
     lineItems.reduce((acc, l) => acc + l.grossWeightKg, 0),
   );
-  const totalCbm = roundCbm(lineItems.reduce((acc, l) => acc + l.cbm, 0));
+  const palletsGrossWeightKg = roundWeight(safePalletCount * PALLET_WEIGHT_KG);
+  const totalGrossWeightKg = roundWeight(
+    cartonsGrossWeightKg + palletsGrossWeightKg,
+  );
+  const cartonsCbm = roundCbm(lineItems.reduce((acc, l) => acc + l.cbm, 0));
+  const rawPalletsCbm = safePalletCount * PALLET_VOLUME_CBM;
+  const palletsCbm = roundCbm(rawPalletsCbm);
+  const totalCbm = roundCbm(
+    lineItems.reduce((acc, l) => acc + l.cbm, 0) + rawPalletsCbm,
+  );
 
   const goodsSubtotal = roundByCurrency(
     lineItems.reduce((acc, l) => acc + l.amount, 0),
@@ -361,8 +387,13 @@ export function calculateOrderSummary(
     lineItems,
     totalQuantity,
     totalCartons,
+    palletCount: safePalletCount,
     totalNetWeightKg,
+    cartonsGrossWeightKg,
+    palletsGrossWeightKg,
     totalGrossWeightKg,
+    cartonsCbm,
+    palletsCbm,
     totalCbm,
     goodsSubtotal,
     packingHandlingCost,

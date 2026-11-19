@@ -71,10 +71,28 @@ test('calculates goods subtotal, EXW total, weights, and CBM automatically', () 
   assert.equal(summary.totalCartons, 20);
   // Net weight: 1000*0.045 + 500*0.08 = 45 + 40 = 85 kg
   assert.equal(summary.totalNetWeightKg, 85);
-  // Gross weight: 1000*0.048 + 500*0.085 = 48 + 42.5 = 90.5 kg
-  assert.equal(summary.totalGrossWeightKg, 90.5);
-  // CBM: 10*(0.4*0.3*0.2) + 10*(0.4*0.3*0.25) = 0.24 + 0.30 = 0.54 m3
+  // Gross weight (0 pallets): 85 + 20 cartons * 0.65 kg = 98 kg
+  assert.equal(summary.cartonsGrossWeightKg, 98);
+  assert.equal(summary.palletsGrossWeightKg, 0);
+  assert.equal(summary.totalGrossWeightKg, 98);
+  // CBM (0 pallets): 10*(0.4*0.3*0.2) + 10*(0.4*0.3*0.25) = 0.24 + 0.30 = 0.54 m3
+  assert.equal(summary.cartonsCbm, 0.54);
+  assert.equal(summary.palletsCbm, 0);
   assert.equal(summary.totalCbm, 0.54);
+});
+
+test('includes pallet tare (17 kg/pallet) and pallet volume (1.1x1.1x0.14 CBM/pallet) in total G.W. and CBM', () => {
+  const summary = calculateOrderSummary(sampleItems, sampleCosts, 'EXW', 'USD', 2);
+  assert.equal(summary.palletCount, 2);
+  // Cartons G.W. = 85 + 20 * 0.65 = 98 kg; Pallets G.W. = 2 * 17 = 34 kg; Total G.W. = 132 kg
+  assert.equal(summary.cartonsGrossWeightKg, 98);
+  assert.equal(summary.palletsGrossWeightKg, 34);
+  assert.equal(summary.totalGrossWeightKg, 132);
+  // Cartons CBM = 0.54; Pallets CBM = 2 * (1.1 * 1.1 * 0.14 = 0.1694) = 0.3388 -> 0.339
+  // Total CBM = 0.54 + 0.3388 = 0.8788 -> 0.879
+  assert.equal(summary.cartonsCbm, 0.54);
+  assert.equal(summary.palletsCbm, 0.339);
+  assert.equal(summary.totalCbm, 0.879);
 });
 
 test('computes all 10 Incoterms 2020 totals accurately while keeping EXW linked', () => {

@@ -6,6 +6,7 @@ import { createInitialErpState } from './data/seedData';
 import { UI_TEXT } from './i18n/uiTranslations';
 import type {
   BankAccount,
+  ContractSettings,
   Customer,
   DocLanguage,
   ErpDataPayload,
@@ -17,6 +18,7 @@ import type {
   Supplier,
   UiLanguage,
 } from './types/erp';
+import { createDefaultContractSettings } from './utils/contractDefaults';
 import {
   cloudErpOps,
   ensureUserWorkspaceInitialized,
@@ -45,6 +47,7 @@ import { OrderWorkspace } from './components/OrderWorkspace';
 import { DocumentGenerator } from './components/DocumentGenerator';
 import { MasterDataManager } from './components/MasterDataManager';
 import { HistoryBackupManager } from './components/HistoryBackupManager';
+import { SystemSettingsPanel } from './components/SystemSettingsPanel';
 
 function upsertById<T extends { id: string }>(list: T[], item: T): T[] {
   const exists = list.some((entry) => entry.id === item.id);
@@ -83,6 +86,7 @@ export default function App() {
     products: [],
     auditLogs: [],
     snapshots: [],
+    contractSettings: createDefaultContractSettings(),
     activeOrderId: '',
   }));
 
@@ -161,6 +165,10 @@ export default function App() {
                 activeOrderId: resolvedActiveId,
                 uiLang: cloud.profile?.uiLang ?? prev.uiLang,
                 docLang: cloud.profile?.docLang ?? prev.docLang,
+                contractSettings:
+                  cloud.profile?.contractSettings ??
+                  prev.contractSettings ??
+                  createDefaultContractSettings(),
                 snapshots: localSnaps.length > 0 ? localSnaps : prev.snapshots,
               };
             });
@@ -296,6 +304,7 @@ export default function App() {
       activeOrder.costs,
       activeOrder.shipping.incoterm,
       activeOrder.currency,
+      activeOrder.palletCount ?? 0,
     );
     const totalLabel = formatMoney(summary.incotermTotal, activeOrder.currency);
 
@@ -757,6 +766,24 @@ export default function App() {
     }
   };
 
+  const handleSaveContractSettings = async (
+    contractSettings: ContractSettings,
+  ) => {
+    setState((prev) => ({ ...prev, contractSettings }));
+    if (uid) {
+      try {
+        await updateWorkspacePrefs(uid, { contractSettings });
+        await cloudErpOps.appendAuditLog(uid, {
+          action: 'MASTER_UPDATE',
+          targetLabel: 'CONTRACT_SETTINGS',
+          summary: 'Updated default contract clauses & document settings',
+        });
+      } catch (err) {
+        setFatalError(err instanceof Error ? err : new Error(String(err)));
+      }
+    }
+  };
+
   const handleSignOut = async () => {
     orderFlushTimersRef.current.forEach((timerId) =>
       window.clearTimeout(timerId),
@@ -864,6 +891,8 @@ export default function App() {
               logistics={activeLogistics}
               products={state.products}
               docLang={state.docLang}
+              contractSettings={state.contractSettings}
+              onChangeOrder={handleOrderChange}
               onChangeDocLang={handleChangeDocLang}
               onCreateNewOrder={handleCreateNewOrder}
               t={t}
@@ -901,6 +930,7 @@ export default function App() {
               bankAccounts={state.bankAccounts}
               products={state.products}
               docLang={state.docLang}
+              contractSettings={state.contractSettings}
               auditLogs={state.auditLogs}
               snapshots={state.snapshots}
               onLoadOrder={(id) => {
@@ -918,6 +948,16 @@ export default function App() {
               onCreateSnapshot={handleCreateSnapshotNow}
               onRestoreSnapshot={handleRestoreSnapshot}
               onResetDemo={handleResetDemo}
+              t={t}
+            />
+          )}
+
+          {activeSection === 'settings' && (
+            <SystemSettingsPanel
+              settings={
+                state.contractSettings ?? createDefaultContractSettings()
+              }
+              onSaveSettings={handleSaveContractSettings}
               t={t}
             />
           )}

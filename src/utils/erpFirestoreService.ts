@@ -18,6 +18,7 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import type {
   AuditLogEntry,
   BankAccount,
+  ContractSettings,
   Customer,
   DocLanguage,
   ErpDataPayload,
@@ -35,7 +36,10 @@ import {
   clampUiLang,
   sanitizeAuditLogPayload,
   sanitizeBankPayload,
+  sanitizeContractSettings,
   sanitizeCustomerPayload,
+  sanitizeDocOverrides,
+  sanitizeDocSpecialFields,
   sanitizeLogisticsPayload,
   sanitizeOrderPayload,
   sanitizeProductPayload,
@@ -51,6 +55,7 @@ export interface UserWorkspaceProfile {
   uiLang: UiLanguage;
   docLang: DocLanguage;
   activeOrderId: string;
+  contractSettings?: ContractSettings;
 }
 
 export interface CloudErpCollections {
@@ -278,6 +283,9 @@ export function subscribeUserWorkspace(
             uiLang: clampUiLang(d.uiLang),
             docLang: clampDocLang(d.docLang),
             activeOrderId: String(d.activeOrderId ?? ''),
+            contractSettings: d.contractSettings
+              ? sanitizeContractSettings(d.contractSettings)
+              : undefined,
           };
         }
         markReady('profile');
@@ -298,6 +306,9 @@ export function subscribeUserWorkspace(
             fax: String(data.fax ?? ''),
             taxOrImporterId: String(data.taxOrImporterId ?? ''),
             customPrices: Array.isArray(data.customPrices) ? data.customPrices : [],
+            documentTemplates: Array.isArray(data.documentTemplates)
+              ? data.documentTemplates
+              : [],
           };
         });
         markReady('customers');
@@ -384,6 +395,8 @@ export function subscribeUserWorkspace(
                 raw.exchangeRate as number | undefined,
               ),
               cartonsPerLayer: Math.max(1, Math.round(Number(raw.cartonsPerLayer) || 12)),
+              docOverrides: sanitizeDocOverrides(raw.docOverrides),
+              docSpecialFields: sanitizeDocSpecialFields(raw.docSpecialFields),
               createdAt: String(raw.orderCreatedAt ?? raw.createdAt ?? ''),
               updatedAt: String(raw.orderUpdatedAt ?? raw.updatedAt ?? ''),
             };
@@ -427,7 +440,12 @@ function isFirestoreNotFound(err: unknown): boolean {
 
 export async function updateWorkspacePrefs(
   uid: string,
-  prefs: { uiLang?: UiLanguage; docLang?: DocLanguage; activeOrderId?: string },
+  prefs: {
+    uiLang?: UiLanguage;
+    docLang?: DocLanguage;
+    activeOrderId?: string;
+    contractSettings?: ContractSettings;
+  },
 ): Promise<void> {
   const path = `users/${uid}`;
   return enqueueDocWrite(path, async () => {
@@ -437,6 +455,9 @@ export async function updateWorkspacePrefs(
       if (prefs.docLang) updatePayload.docLang = clampDocLang(prefs.docLang);
       if (prefs.activeOrderId !== undefined) {
         updatePayload.activeOrderId = clampStr(prefs.activeOrderId, BLUEPRINT_LIMITS.ID_MAX);
+      }
+      if (prefs.contractSettings !== undefined) {
+        updatePayload.contractSettings = sanitizeContractSettings(prefs.contractSettings);
       }
       try {
         await updateDoc(userDocRef(uid), updatePayload);
@@ -458,6 +479,9 @@ export async function updateWorkspacePrefs(
           uiLang: clampUiLang(prefs.uiLang, 'zh'),
           docLang: clampDocLang(prefs.docLang, 'en'),
           activeOrderId: clampStr(prefs.activeOrderId ?? '', BLUEPRINT_LIMITS.ID_MAX),
+          ...(prefs.contractSettings
+            ? { contractSettings: sanitizeContractSettings(prefs.contractSettings) }
+            : {}),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

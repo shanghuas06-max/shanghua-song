@@ -252,6 +252,56 @@ export interface UiDictionary {
   cartonsPerLayerLabel: string;
   btnAutoCalcPacking: string;
   jpyBaseUnitLabel: string;
+  navSettings: string;
+  docTabContract: string;
+  settingsTitle: string;
+  settingsDesc: string;
+  settingsSavedToast: string;
+  settingsResetDefaults: string;
+  settingsDeliveryLabel: string;
+  settingsDeliveryEnLabel: string;
+  settingsPackingLabel: string;
+  settingsPackingEnLabel: string;
+  settingsPaymentLabel: string;
+  settingsPaymentEnLabel: string;
+  settingsArbitrationLabel: string;
+  settingsArbitrationEnLabel: string;
+  settingsDisclaimerLabel: string;
+  settingsStampLabel: string;
+  settingsClausesTitle: string;
+  settingsAddClause: string;
+  btnSaveSettings: string;
+  custTemplatesTitle: string;
+  custTemplatesHint: string;
+  btnUploadTemplate: string;
+  tplNameLabel: string;
+  tplScopeLabel: string;
+  tplScopeInvoice: string;
+  tplScopePacking: string;
+  tplScopeContract: string;
+  tplScopeAll: string;
+  tplStartRowLabel: string;
+  tplMappingsTitle: string;
+  tplAddMapping: string;
+  tplSystemField: string;
+  tplTargetRef: string;
+  tplDetectedHint: string;
+  tplUsingCustomBadge: string;
+  tplExportCustomBtn: string;
+  tplExportDefaultBtn: string;
+  tplBadgeUnit: string;
+  docWysiwygHint: string;
+  btnResetOverrides: string;
+  btnInsertSpecialField: string;
+  specialStampLabel: string;
+  specialSignatureLabel: string;
+  specialDisclaimerLabel: string;
+  specialDisclaimerPlaceholder: string;
+  specialCustomNoteLabel: string;
+  specialCustomNotePlaceholder: string;
+  usedPalletsLabel: string;
+  palletSpecHint: string;
+  btnExportContractDocx: string;
 }
 
 export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
@@ -512,6 +562,56 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     cartonsPerLayerLabel: '每层箱数',
     btnAutoCalcPacking: '按规则重新换算托盘与空箱',
     jpyBaseUnitLabel: '日元基准价',
+    navSettings: '系统设置与合同条款',
+    docTabContract: '销售合同 (Contract/PI)',
+    settingsTitle: '系统默认合同条款与单据设置',
+    settingsDesc: '配置销售合同 (Sales Contract / PI) 的默认付款方式、交货期、包装要求、仲裁条款、公章名称与免责声明模板。支持 {incoterm}、{incotermPlace}、{paymentTerms}、{supplierName} 等动态占位符。',
+    settingsSavedToast: '系统设置已保存并同步至云端',
+    settingsResetDefaults: '恢复默认条款',
+    settingsDeliveryLabel: '默认交货期（中文）',
+    settingsDeliveryEnLabel: '默认交货期（英文）',
+    settingsPackingLabel: '默认包装要求（中文）',
+    settingsPackingEnLabel: '默认包装要求（英文）',
+    settingsPaymentLabel: '默认付款方式（中文）',
+    settingsPaymentEnLabel: '默认付款方式（英文）',
+    settingsArbitrationLabel: '默认仲裁条款（中文）',
+    settingsArbitrationEnLabel: '默认仲裁条款（英文）',
+    settingsDisclaimerLabel: '默认免责声明模板',
+    settingsStampLabel: '电子公章抬头文字',
+    settingsClausesTitle: '合同正文标准条款列表（中英双语）',
+    settingsAddClause: '新增合同条款',
+    btnSaveSettings: '保存系统设置',
+    custTemplatesTitle: '客户专属单据模板 (.xlsx / .docx) 与字段映射',
+    custTemplatesHint: '上传客户指定的 Excel 或 Word 模板（≤ 330KB），设置系统字段与单元格（如 B10、D20）或 {标签} 的映射。生成单据时系统将自动匹配并套打该客户模板。',
+    btnUploadTemplate: '上传单据模板',
+    tplNameLabel: '模板名称',
+    tplScopeLabel: '适用单据类型',
+    tplScopeInvoice: '商业发票 (Invoice)',
+    tplScopePacking: '装箱单 (Packing List)',
+    tplScopeContract: '销售合同 (Contract/PI)',
+    tplScopeAll: '通用全部单据 (All)',
+    tplStartRowLabel: '明细起始行号 (Excel 行号)',
+    tplMappingsTitle: '字段映射规则',
+    tplAddMapping: '新增字段映射',
+    tplSystemField: '系统字段',
+    tplTargetRef: '模板位置 (如 B10 或 {CLIENT})',
+    tplDetectedHint: '已自动识别模板占位符 / 单元格：',
+    tplUsingCustomBadge: '已匹配客户专属模板',
+    tplExportCustomBtn: '按客户模板导出',
+    tplExportDefaultBtn: '导出标准样式 Excel',
+    tplBadgeUnit: '个专属模板',
+    docWysiwygHint: '所见即所得微调：虚线标注文字可直接点击修改并自动保存；导出 PDF 打印或 Excel 时将完全保留修改内容。',
+    btnResetOverrides: '重置微调',
+    btnInsertSpecialField: '插入特殊字段',
+    specialStampLabel: '插入电子公章 (Company Stamp)',
+    specialSignatureLabel: '显示授权手写签名 (Signature)',
+    specialDisclaimerLabel: '插入动态免责声明 (Disclaimer)',
+    specialDisclaimerPlaceholder: '支持 {invoiceNo} / {orderDate} / {currency} / {incoterm}',
+    specialCustomNoteLabel: '追加自定义特殊备注 (Note)',
+    specialCustomNotePlaceholder: '输入需印在单据底部的补充说明...',
+    usedPalletsLabel: '使用托盘数量 (Pallets)',
+    palletSpecHint: '单箱+0.65kg · 单托盘17kg (110×110×14cm = 0.1694m³)',
+    btnExportContractDocx: '导出合同 Word (.docx)',
   },
   ja: {
     brandTitle: 'HARDLOCK ERP',
@@ -770,6 +870,56 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     cartonsPerLayerLabel: '1段あたり箱数',
     btnAutoCalcPacking: 'ルールに基づき再計算',
     jpyBaseUnitLabel: 'JPY基準単価',
+    navSettings: 'システム設定・契約条項',
+    docTabContract: '売買契約書 (Contract/PI)',
+    settingsTitle: '契約書既定条項・書類システム設定',
+    settingsDesc: '売買契約書・PI の支払条件、納期、梱包要件、仲裁条項、社印名、免責事項を設定します。{incoterm} や {paymentTerms} 等の変数を利用できます。',
+    settingsSavedToast: 'システム設定をクラウドへ保存しました',
+    settingsResetDefaults: '既定条項に戻す',
+    settingsDeliveryLabel: '既定納期・発送期限（中国語）',
+    settingsDeliveryEnLabel: '既定納期・発送期限（英語）',
+    settingsPackingLabel: '既定梱包要件（中国語）',
+    settingsPackingEnLabel: '既定梱包要件（英語）',
+    settingsPaymentLabel: '既定支払条件（中国語）',
+    settingsPaymentEnLabel: '既定支払条件（英語）',
+    settingsArbitrationLabel: '既定仲裁条項（中国語）',
+    settingsArbitrationEnLabel: '既定仲裁条項（英語）',
+    settingsDisclaimerLabel: '既定免責事項テンプレート',
+    settingsStampLabel: '電子社印タイトル',
+    settingsClausesTitle: '契約条項リスト（中英バイリンガル）',
+    settingsAddClause: '条項を追加',
+    btnSaveSettings: 'システム設定を保存',
+    custTemplatesTitle: '顧客専用帳票テンプレート (.xlsx / .docx)',
+    custTemplatesHint: '顧客指定の Excel / Word テンプレート（≤ 330KB）を登録し、システム項目をセル番地（例: B10）または {タグ} にマッピングします。',
+    btnUploadTemplate: 'テンプレートをアップロード',
+    tplNameLabel: 'テンプレート名',
+    tplScopeLabel: '対象書類',
+    tplScopeInvoice: 'インボイス (Invoice)',
+    tplScopePacking: 'パッキングリスト (P/L)',
+    tplScopeContract: '売買契約書 (Contract/PI)',
+    tplScopeAll: '全書類共通 (All)',
+    tplStartRowLabel: '明細開始行 (Excel 行番号)',
+    tplMappingsTitle: '項目マッピング',
+    tplAddMapping: 'マッピング追加',
+    tplSystemField: 'システム項目',
+    tplTargetRef: 'セル / タグ (例: B10)',
+    tplDetectedHint: '検出されたタグ / セル：',
+    tplUsingCustomBadge: '顧客専用テンプレート適用中',
+    tplExportCustomBtn: '顧客テンプレート出力',
+    tplExportDefaultBtn: '標準スタイル Excel 出力',
+    tplBadgeUnit: '件の専用テンプレート',
+    docWysiwygHint: 'プレビュー上の破線箇所はクリックして直接編集できます。編集内容は印刷PDFとExcel出力の両方に反映されます。',
+    btnResetOverrides: '微調整をリセット',
+    btnInsertSpecialField: '特殊項目を挿入',
+    specialStampLabel: '社印を挿入 (Company Stamp)',
+    specialSignatureLabel: '署名を表示 (Signature)',
+    specialDisclaimerLabel: '動的免責事項を挿入 (Disclaimer)',
+    specialDisclaimerPlaceholder: '{invoiceNo} / {orderDate} / {currency} / {incoterm} が利用可能',
+    specialCustomNoteLabel: 'カスタム特記事項 (Note)',
+    specialCustomNotePlaceholder: '書類下部に印刷する追加注記を入力...',
+    usedPalletsLabel: '使用パレット数 (Pallets)',
+    palletSpecHint: '箱+0.65kg · パレット17kg (110×110×14cm = 0.1694m³)',
+    btnExportContractDocx: '契約書 Word (.docx) 出力',
   },
   en: {
     brandTitle: 'HARDLOCK ERP',
@@ -1028,5 +1178,55 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     cartonsPerLayerLabel: 'Cartons / Layer',
     btnAutoCalcPacking: 'Recalculate Pallets & Empty',
     jpyBaseUnitLabel: 'JPY Base',
+    navSettings: 'Settings & Contract Clauses',
+    docTabContract: 'Contract / PI',
+    settingsTitle: 'Default Contract Clauses & System Settings',
+    settingsDesc: 'Configure default Payment Terms, Delivery Time, Packing, Arbitration, Stamp Label, and Disclaimer text for Sales Contracts / PI. Supports placeholders like {incoterm}, {incotermPlace}, and {paymentTerms}.',
+    settingsSavedToast: 'System settings saved and synced to cloud',
+    settingsResetDefaults: 'Reset Defaults',
+    settingsDeliveryLabel: 'Default Delivery Time (ZH)',
+    settingsDeliveryEnLabel: 'Default Delivery Time (EN)',
+    settingsPackingLabel: 'Default Packing Clause (ZH)',
+    settingsPackingEnLabel: 'Default Packing Clause (EN)',
+    settingsPaymentLabel: 'Default Payment Clause (ZH)',
+    settingsPaymentEnLabel: 'Default Payment Clause (EN)',
+    settingsArbitrationLabel: 'Default Arbitration Clause (ZH)',
+    settingsArbitrationEnLabel: 'Default Arbitration Clause (EN)',
+    settingsDisclaimerLabel: 'Default Disclaimer Template',
+    settingsStampLabel: 'Company Stamp Label',
+    settingsClausesTitle: 'Bilingual Contract Clauses',
+    settingsAddClause: 'Add Clause',
+    btnSaveSettings: 'Save Settings',
+    custTemplatesTitle: 'Customer Document Templates (.xlsx / .docx)',
+    custTemplatesHint: 'Upload customer-specific Excel or Word templates (≤ 330KB) and map system fields to cell references (e.g. B10) or {tag} placeholders.',
+    btnUploadTemplate: 'Upload Template',
+    tplNameLabel: 'Template Name',
+    tplScopeLabel: 'Document Scope',
+    tplScopeInvoice: 'Commercial Invoice',
+    tplScopePacking: 'Packing List',
+    tplScopeContract: 'Contract / PI',
+    tplScopeAll: 'All Documents',
+    tplStartRowLabel: 'Items Start Row (Excel)',
+    tplMappingsTitle: 'Field Mappings',
+    tplAddMapping: 'Add Mapping',
+    tplSystemField: 'System Field',
+    tplTargetRef: 'Target Cell / Tag (e.g. B10)',
+    tplDetectedHint: 'Detected placeholders / cells:',
+    tplUsingCustomBadge: 'Customer Template Matched',
+    tplExportCustomBtn: 'Export Customer Template',
+    tplExportDefaultBtn: 'Export Styled Excel',
+    tplBadgeUnit: 'templates',
+    docWysiwygHint: 'WYSIWYG Inline Editing: Click any dashed field below to edit directly. Changes persist to both Print/PDF and Excel exports.',
+    btnResetOverrides: 'Reset Edits',
+    btnInsertSpecialField: 'Insert Special Field',
+    specialStampLabel: 'Company Stamp (SVG Seal)',
+    specialSignatureLabel: 'Authorized Signature',
+    specialDisclaimerLabel: 'Dynamic Disclaimer',
+    specialDisclaimerPlaceholder: 'Supports {invoiceNo} / {orderDate} / {currency} / {incoterm}',
+    specialCustomNoteLabel: 'Custom Footer Note',
+    specialCustomNotePlaceholder: 'Enter custom remark to append at bottom...',
+    usedPalletsLabel: 'Used Pallets',
+    palletSpecHint: '+0.65kg/ctn · +17kg/pallet (110×110×14cm = 0.1694m³)',
+    btnExportContractDocx: 'Export Contract (.docx)',
   },
 };

@@ -117,8 +117,15 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
         order?.costs ?? DEFAULT_EMPTY_COSTS,
         order?.shipping.incoterm ?? 'FOB',
         order?.currency ?? 'USD',
+        order?.palletCount ?? 0,
       ),
-    [order?.items, order?.costs, order?.shipping.incoterm, order?.currency],
+    [
+      order?.items,
+      order?.costs,
+      order?.shipping.incoterm,
+      order?.currency,
+      order?.palletCount,
+    ],
   );
 
   const activeMode = order?.shipping.mode ?? 'SEA';
@@ -1162,7 +1169,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
         </div>
 
         {/* Summary Packing & Goods Bar */}
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs">
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 items-center text-xs">
           <div>
             <span className="text-slate-500">{t.totalQty}: </span>
             <span className="font-mono-tabular font-semibold text-slate-900">
@@ -1175,6 +1182,27 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               {summary.totalCartons}
             </span>
           </div>
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="order-pallet-count"
+              className="text-slate-600 font-medium whitespace-nowrap"
+            >
+              {t.usedPalletsLabel}:
+            </label>
+            <input
+              id="order-pallet-count"
+              data-testid="order-pallet-count-input"
+              type="number"
+              min={0}
+              value={order.palletCount ?? 0}
+              onChange={(e) =>
+                updateOrder({
+                  palletCount: Math.max(0, Math.round(Number(e.target.value) || 0)),
+                })
+              }
+              className="w-20 h-7 px-2 text-right font-mono-tabular font-semibold text-blue-800 bg-white border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+          </div>
           <div>
             <span className="text-slate-500">{t.totalNw}: </span>
             <span className="font-mono-tabular font-semibold text-slate-900">
@@ -1183,16 +1211,30 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
           </div>
           <div>
             <span className="text-slate-500">{t.totalGw}: </span>
-            <span className="font-mono-tabular font-semibold text-slate-900">
+            <span
+              data-testid="summary-total-gw"
+              className="font-mono-tabular font-semibold text-slate-900"
+            >
               {summary.totalGrossWeightKg.toFixed(2)} kg
             </span>
           </div>
           <div>
             <span className="text-slate-500">{t.totalCbm}: </span>
-            <span className="font-mono-tabular font-semibold text-slate-900">
+            <span
+              data-testid="summary-total-cbm"
+              className="font-mono-tabular font-semibold text-slate-900"
+            >
               {summary.totalCbm.toFixed(3)} m³
             </span>
           </div>
+        </div>
+        <div className="px-5 py-1.5 bg-slate-50/70 border-t border-slate-100 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-2">
+          <span>{t.palletSpecHint}</span>
+          <span className="font-mono-tabular">
+            G.W. = {summary.cartonsGrossWeightKg.toFixed(2)} kg (货+箱) +{' '}
+            {summary.palletsGrossWeightKg.toFixed(2)} kg (托盘) · CBM ={' '}
+            {summary.cartonsCbm.toFixed(3)} + {summary.palletsCbm.toFixed(3)} m³
+          </span>
         </div>
 
         {/* Carton -> Pallet -> Empty Carton Auto-Conversion Rule Strip */}

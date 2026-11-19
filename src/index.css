@@ -25,6 +25,22 @@
     font-family: "Times New Roman", Times, Georgia, "Noto Serif JP", "Noto Serif SC", serif;
     font-variant-numeric: tabular-nums;
   }
+
+  .editable-doc-field {
+    border-bottom: 1px dashed rgba(37, 99, 235, 0.35);
+    border-radius: 2px;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+  }
+
+  .editable-doc-field:hover {
+    background-color: rgba(254, 243, 199, 0.5);
+    border-bottom-color: rgba(37, 99, 235, 0.8);
+  }
+
+  .editable-doc-field:focus {
+    outline: 1.5px solid #2563eb;
+    background-color: rgba(254, 243, 199, 0.85);
+  }
 }
 
 /* Print Styles — fixes v2 CSS hidden conflict so print works cleanly across all browsers */
@@ -77,5 +93,11 @@
   .print-avoid-break {
     page-break-inside: avoid;
     break-inside: avoid;
+  }
+
+  .editable-doc-field {
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
   }
 }

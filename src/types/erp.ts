@@ -16,9 +16,109 @@ export type IncotermCode =
   | 'DPU'
   | 'DDP';
 
-export type NavSection = 'order' | 'documents' | 'master' | 'history';
+export type NavSection = 'order' | 'documents' | 'master' | 'history' | 'settings';
 export type MasterTab = 'customers' | 'suppliers' | 'logistics' | 'banks' | 'products';
-export type DocumentTab = 'invoice' | 'packing' | 'casemark' | 'all';
+export type DocumentTab = 'invoice' | 'packing' | 'contract' | 'casemark' | 'all';
+
+export type DocTemplateFileType = 'xlsx' | 'docx';
+export type DocTemplateScope = 'invoice' | 'packing' | 'contract' | 'all';
+
+export type TemplateSystemFieldKey =
+  | 'invoiceNo'
+  | 'contractNo'
+  | 'poNo'
+  | 'orderDate'
+  | 'currency'
+  | 'exchangeRate'
+  | 'incoterm'
+  | 'incotermPlace'
+  | 'paymentTerms'
+  | 'portOfLoading'
+  | 'portOfDischarge'
+  | 'vesselOrFlight'
+  | 'etd'
+  | 'eta'
+  | 'customerName'
+  | 'customerAddress'
+  | 'customerCountry'
+  | 'customerContact'
+  | 'customerPhone'
+  | 'customerFax'
+  | 'customerTaxId'
+  | 'billToName'
+  | 'billToAddress'
+  | 'supplierName'
+  | 'supplierAddress'
+  | 'supplierPhone'
+  | 'supplierFax'
+  | 'supplierTaxId'
+  | 'bankName'
+  | 'bankSwift'
+  | 'bankAccountNo'
+  | 'totalQty'
+  | 'totalCartons'
+  | 'palletCount'
+  | 'emptyCartons'
+  | 'totalNetWeight'
+  | 'totalGrossWeight'
+  | 'totalCbm'
+  | 'exwTotal'
+  | 'freightTotal'
+  | 'totalAmount'
+  | 'totalAmountWords'
+  | 'remarks'
+  | 'itemsSummary'
+  | 'firstItemSku'
+  | 'firstItemName';
+
+export interface TemplateFieldMapping {
+  id: string;
+  systemField: TemplateSystemFieldKey;
+  targetRef: string;
+}
+
+export interface CustomerDocumentTemplate {
+  id: string;
+  name: string;
+  fileName: string;
+  fileType: DocTemplateFileType;
+  docScope: DocTemplateScope;
+  fileBase64: string;
+  mappings: TemplateFieldMapping[];
+  itemsStartRow?: number;
+  uploadedAt: string;
+}
+
+export interface ContractClauseItem {
+  id: string;
+  number: number;
+  titleZh: string;
+  titleEn: string;
+  bodyZh: string;
+  bodyEn: string;
+}
+
+export interface ContractSettings {
+  defaultDeliveryTime: string;
+  defaultDeliveryTimeEn: string;
+  defaultPackingClause: string;
+  defaultPackingClauseEn: string;
+  defaultPaymentClause: string;
+  defaultPaymentClauseEn: string;
+  defaultArbitrationClause: string;
+  defaultArbitrationClauseEn: string;
+  defaultDisclaimerText: string;
+  companyStampLabel: string;
+  clauses: ContractClauseItem[];
+}
+
+export interface DocSpecialFields {
+  showCompanyStamp?: boolean;
+  showSignature?: boolean;
+  showDisclaimer?: boolean;
+  disclaimerText?: string;
+  customNote?: string;
+}
 
 export interface PriceTier {
   minQty: number;
@@ -47,6 +147,7 @@ export interface Customer {
   defaultIncoterm: IncotermCode;
   notifyParty?: string;
   customPrices?: CustomerProductPrice[];
+  documentTemplates?: CustomerDocumentTemplate[];
 }
 
 export interface Supplier {
@@ -203,6 +304,8 @@ export interface ExportOrder {
   shipping: OrderShipping;
   costs: OrderCosts;
   remarks: string;
+  docOverrides?: Record<string, string>;
+  docSpecialFields?: DocSpecialFields;
   updatedAt: string;
   createdAt: string;
 }
@@ -239,5 +342,6 @@ export interface ErpStoreState extends ErpDataPayload {
   activeOrderId: string;
   uiLang: UiLanguage;
   docLang: DocLanguage;
+  contractSettings?: ContractSettings;
   snapshots: BackupSnapshot[];
 }

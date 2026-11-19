@@ -115,6 +115,10 @@ test('firestore.rules includes default-deny catch-all, email_verified gate, and 
   assert.match(content, /tieredPrices/);
   assert.match(content, /exchangeRate/);
   assert.match(content, /cartonsPerLayer/);
+  assert.match(content, /documentTemplates/);
+  assert.match(content, /docOverrides/);
+  assert.match(content, /docSpecialFields/);
+  assert.match(content, /contractSettings/);
   for (const col of [
     'customers',
     'suppliers',
@@ -174,7 +178,7 @@ test('Empty-master new order payload satisfies all firestore.rules order keys an
 
   assert.equal(isValidFirestoreId(newOrderPayload.id), true);
   assert.equal(isValidFirestoreId(newOrderPayload.ownerId), true);
-  assert.equal(Object.keys(newOrderPayload).length, 25); // + createdAt & updatedAt serverTimestamp = 27
+  assert.equal(Object.keys(newOrderPayload).length, 27); // + createdAt & updatedAt serverTimestamp = 29
   assert.equal(Object.keys(newOrderPayload.shipping).length, 12);
   assert.equal(Object.keys(newOrderPayload.costs).length, 8);
   assert.equal(newOrderPayload.exchangeRate, 150);
@@ -184,4 +188,6 @@ test('Empty-master new order payload satisfies all firestore.rules order keys an
   assert.equal(newOrderPayload.palletCount, 0);
   assert.equal(newOrderPayload.emptyCartons, 0);
   assert.deepEqual(newOrderPayload.packingRows, []);
+  assert.deepEqual(newOrderPayload.docOverrides, {});
+  assert.equal(newOrderPayload.docSpecialFields.showSignature, true);
 });

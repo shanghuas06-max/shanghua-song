@@ -10,6 +10,9 @@ import { OrderWorkspace } from './OrderWorkspace';
 import { DocumentGenerator } from './DocumentGenerator';
 import { MasterDataManager } from './MasterDataManager';
 import { HistoryBackupManager } from './HistoryBackupManager';
+import { SystemSettingsPanel } from './SystemSettingsPanel';
+import { SidebarNav } from './SidebarNav';
+import { createDefaultContractSettings } from '../utils/contractDefaults';
 
 test('resolveActiveOrder handles empty, stale, and matching order IDs', () => {
   const seed = createInitialErpState();
@@ -369,4 +372,182 @@ test('DocumentGenerator renders optional Fax, Tax ID, and non-JPY Exchange Rate 
   assert.match(html, /Tax ID : TAX-999-001/);
   assert.match(html, /\*Exchange Rate : 1 USD = 155 JPY/);
 });
+
+test('DocumentGenerator renders Contract/PI sheet, WYSIWYG editable fields, special field controls, and customer template export button', () => {
+  const seed = createInitialErpState();
+  const order = {
+    ...seed.orders[0],
+    docOverrides: {
+      'contract.buyerName': 'CUSTOM EDITED BUYER CORP',
+    },
+    docSpecialFields: {
+      showCompanyStamp: true,
+      showSignature: true,
+      showDisclaimer: true,
+      disclaimerText: 'Only valid for {invoiceNo}',
+      customNote: 'Customs note XYZ',
+    },
+  };
+  const customer = {
+    ...seed.customers.find((c) => c.id === order.customerId)!,
+    documentTemplates: [
+      {
+        id: 'tpl-1',
+        name: 'VIP Contract Template',
+        fileName: 'vip-contract.docx',
+        fileType: 'docx' as const,
+        docScope: 'contract' as const,
+        fileBase64: 'UEs=',
+        mappings: [],
+        uploadedAt: '2026-11-18T00:00:00.000Z',
+      },
+    ],
+  };
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  const contractHtml = renderToStaticMarkup(
+    <DocumentGenerator
+      order={order}
+      customer={customer}
+      billToCustomer={customer}
+      supplier={supplier}
+      bank={bank}
+      logistics={seed.logisticsProviders[0]}
+      products={seed.products}
+      docLang="en"
+      initialDocTab="contract"
+      contractSettings={createDefaultContractSettings()}
+      onChangeOrder={() => {}}
+      onChangeDocLang={() => {}}
+      onCreateNewOrder={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+
+  assert.match(contractHtml, /data-testid="sheet-contract"/);
+  assert.match(contractHtml, /合 同/);
+  assert.match(contractHtml, /CONTRACT/);
+  assert.match(contractHtml, /CUSTOM EDITED BUYER CORP/);
+  assert.match(contractHtml, /NAME OF COMMODITY/);
+  assert.match(contractHtml, /TOTAL VALUE/);
+  assert.match(contractHtml, /contenteditable="true"/i);
+  assert.match(contractHtml, /插入特殊字段/);
+  assert.match(contractHtml, /Company Stamp/);
+  assert.match(contractHtml, /Only valid for /);
+  assert.match(contractHtml, /Customs note XYZ/);
+  assert.match(contractHtml, /按客户模板导出/);
+});
+
+test('SystemSettingsPanel and SidebarNav render system settings navigation and contract clauses editor', () => {
+  const settingsHtml = renderToStaticMarkup(
+    <SystemSettingsPanel
+      settings={createDefaultContractSettings()}
+      onSaveSettings={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(settingsHtml, /data-testid="system-settings-panel"/);
+  assert.match(settingsHtml, /保存系统设置/);
+  assert.match(settingsHtml, /仲裁与仲裁地点/);
+  assert.match(settingsHtml, /ARBITRATION/);
+
+  const sidebarHtml = renderToStaticMarkup(
+    <SidebarNav
+      activeSection="settings"
+      onSelectSection={() => {}}
+      uiLang="zh"
+      onChangeUiLang={() => {}}
+      docLang="en"
+      onChangeDocLang={() => {}}
+      t={UI_TEXT.zh}
+      mobileOpen={false}
+      onCloseMobile={() => {}}
+      ordersCount={2}
+      masterCount={10}
+      userEmail="test@example.com"
+      userDisplayName="Tester"
+      onSignOut={() => {}}
+    />,
+  );
+  assert.match(sidebarHtml, /系统设置与合同条款/);
+});
+
+test('OrderWorkspace renders pallet count input with weight/CBM breakdown and DocumentGenerator renders Contract .docx export button and editable packing summary', () => {
+  const seed = createInitialErpState();
+  const order = {
+    ...seed.orders[0],
+    palletCount: 2,
+  };
+  const customer = seed.customers.find((c) => c.id === order.customerId)!;
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  const wsHtml = renderToStaticMarkup(
+    <OrderWorkspace
+      order={order}
+      customers={seed.customers}
+      suppliers={seed.suppliers}
+      logisticsProviders={seed.logisticsProviders}
+      bankAccounts={seed.bankAccounts}
+      products={seed.products}
+      onChangeOrder={() => {}}
+      onCreateNewOrder={() => {}}
+      onDuplicateOrder={() => {}}
+      onOpenDocuments={() => {}}
+      onOpenHistory={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(wsHtml, /data-testid="order-pallet-count-input"/);
+  assert.match(wsHtml, /data-testid="summary-total-gw"/);
+  assert.match(wsHtml, /data-testid="summary-total-cbm"/);
+  assert.match(wsHtml, /单托盘17kg/);
+  assert.match(wsHtml, /34\.00 kg \(托盘\)/);
+
+  const docContractHtml = renderToStaticMarkup(
+    <DocumentGenerator
+      order={order}
+      customer={customer}
+      billToCustomer={customer}
+      supplier={supplier}
+      bank={bank}
+      logistics={seed.logisticsProviders[0]}
+      products={seed.products}
+      docLang="en"
+      initialDocTab="contract"
+      contractSettings={createDefaultContractSettings()}
+      onChangeOrder={() => {}}
+      onChangeDocLang={() => {}}
+      onCreateNewOrder={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(docContractHtml, /data-testid="export-contract-docx-btn"/);
+  assert.match(docContractHtml, /导出合同 Word \(\.docx\)/);
+  assert.match(docContractHtml, /data-editable-key="contract\.buyerPhone"/);
+  assert.match(docContractHtml, /data-editable-key="contract\.preambleZh"/);
+
+  const docPackingHtml = renderToStaticMarkup(
+    <DocumentGenerator
+      order={order}
+      customer={customer}
+      billToCustomer={customer}
+      supplier={supplier}
+      bank={bank}
+      logistics={seed.logisticsProviders[0]}
+      products={seed.products}
+      docLang="en"
+      initialDocTab="packing"
+      contractSettings={createDefaultContractSettings()}
+      onChangeOrder={() => {}}
+      onChangeDocLang={() => {}}
+      onCreateNewOrder={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(docPackingHtml, /data-editable-key="pl\.volumeSummary"/);
+  assert.match(docPackingHtml, /data-editable-key="pl\.cartonSize"/);
+});
+
 
