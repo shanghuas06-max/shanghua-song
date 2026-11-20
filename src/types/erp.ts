@@ -114,12 +114,27 @@ export interface ContractSettings {
   clauses: ContractClauseItem[];
 }
 
+export type DocFontFamilyId = 'serif' | 'sans' | 'songti' | 'arial' | 'mono';
+export type DocCellDensity = 'compact' | 'normal' | 'relaxed';
+
+export interface DocStyleSettings {
+  fontFamily?: DocFontFamilyId;
+  baseFontSizePx?: number;
+  tableFontSizePx?: number;
+  titleFontSizePx?: number;
+  lineHeight?: number;
+  cellDensity?: DocCellDensity;
+  boldBody?: boolean;
+}
+
 export interface DocSpecialFields {
   showCompanyStamp?: boolean;
   showSignature?: boolean;
   showDisclaimer?: boolean;
   disclaimerText?: string;
   customNote?: string;
+  docStyle?: DocStyleSettings;
+  hiddenSections?: string[];
 }
 
 export interface PriceTier {

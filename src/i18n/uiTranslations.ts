@@ -326,6 +326,30 @@ export interface UiDictionary {
   customPartNameBadge: string;
   customStandardNameLabel: string;
   breadcrumbBackToOrders: string;
+  btnTypographyPanel: string;
+  fontFamilyLabel: string;
+  fontOptionSerif: string;
+  fontOptionSans: string;
+  fontOptionSongti: string;
+  fontOptionArial: string;
+  fontOptionMono: string;
+  baseFontSizeLabel: string;
+  tableFontSizeLabel: string;
+  titleFontSizeLabel: string;
+  lineHeightLabel: string;
+  cellDensityLabel: string;
+  densityCompact: string;
+  densityNormal: string;
+  densityRelaxed: string;
+  boldBodyLabel: string;
+  btnResetTypography: string;
+  docAddProductFromCatalog: string;
+  docAddBlankRow: string;
+  docAddPackingRow: string;
+  docResetPackingAuto: string;
+  docDeleteRowLabel: string;
+  docDeleteSectionLabel: string;
+  docRestoreSectionsLabel: string;
 }
 
 export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
@@ -660,6 +684,30 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     customPartNameBadge: '专属品名',
     customStandardNameLabel: '标准品名',
     breadcrumbBackToOrders: '返回订单列表',
+    btnTypographyPanel: '调节字体与排版',
+    fontFamilyLabel: '单据字体',
+    fontOptionSerif: '经典衬线体 (Times New Roman)',
+    fontOptionSans: '现代无衬线 (Sans-Serif)',
+    fontOptionSongti: '宋体 / 明朝体 (SimSun)',
+    fontOptionArial: '标准西文体 (Arial)',
+    fontOptionMono: '等宽对齐体 (Monospace)',
+    baseFontSizeLabel: '正文字号',
+    tableFontSizeLabel: '表格字号',
+    titleFontSizeLabel: '标题字号',
+    lineHeightLabel: '行距倍率',
+    cellDensityLabel: '表格留白',
+    densityCompact: '紧凑',
+    densityNormal: '标准',
+    densityRelaxed: '宽松',
+    boldBodyLabel: '正文加粗',
+    btnResetTypography: '恢复默认排版',
+    docAddProductFromCatalog: '从产品库插入商品行...',
+    docAddBlankRow: '添加商品行',
+    docAddPackingRow: '新增装箱行',
+    docResetPackingAuto: '按订单智能重排箱单',
+    docDeleteRowLabel: '删除行',
+    docDeleteSectionLabel: '删除此区块',
+    docRestoreSectionsLabel: '恢复已隐藏区块',
   },
   ja: {
     brandTitle: 'HARDLOCK ERP',
@@ -992,6 +1040,30 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     customPartNameBadge: '専用品名',
     customStandardNameLabel: '標準品名',
     breadcrumbBackToOrders: '受注一覧へ戻る',
+    btnTypographyPanel: 'フォント・書式設定',
+    fontFamilyLabel: 'フォント',
+    fontOptionSerif: '明朝・セリフ体 (Times New Roman)',
+    fontOptionSans: 'ゴシック体 (Sans-Serif)',
+    fontOptionSongti: '明朝 / 宋体 (SimSun)',
+    fontOptionArial: 'ビジネス欧文 (Arial)',
+    fontOptionMono: '等幅フォント (Monospace)',
+    baseFontSizeLabel: '本文サイズ',
+    tableFontSizeLabel: '表サイズ',
+    titleFontSizeLabel: '見出しサイズ',
+    lineHeightLabel: '行間倍率',
+    cellDensityLabel: 'セル余白',
+    densityCompact: '狭い',
+    densityNormal: '標準',
+    densityRelaxed: '広い',
+    boldBodyLabel: '本文を太字にする',
+    btnResetTypography: '初期設定に戻す',
+    docAddProductFromCatalog: '製品マスタから行を追加...',
+    docAddBlankRow: '明細行を追加',
+    docAddPackingRow: '梱包行を追加',
+    docResetPackingAuto: '受注から自動再計算',
+    docDeleteRowLabel: '行を削除',
+    docDeleteSectionLabel: 'この項目を削除',
+    docRestoreSectionsLabel: '削除項目を復元',
   },
   en: {
     brandTitle: 'HARDLOCK ERP',
@@ -1324,5 +1396,29 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     customPartNameBadge: 'Custom Name',
     customStandardNameLabel: 'Standard',
     breadcrumbBackToOrders: 'Back to Orders List',
+    btnTypographyPanel: 'Font & Typography',
+    fontFamilyLabel: 'Font Family',
+    fontOptionSerif: 'Classic Serif (Times New Roman)',
+    fontOptionSans: 'Clean Sans-Serif',
+    fontOptionSongti: 'SimSun / Mincho Serif',
+    fontOptionArial: 'Business Sans (Arial)',
+    fontOptionMono: 'Monospace (Tabular)',
+    baseFontSizeLabel: 'Body Size',
+    tableFontSizeLabel: 'Table Size',
+    titleFontSizeLabel: 'Title Size',
+    lineHeightLabel: 'Line Height',
+    cellDensityLabel: 'Cell Spacing',
+    densityCompact: 'Compact',
+    densityNormal: 'Normal',
+    densityRelaxed: 'Relaxed',
+    boldBodyLabel: 'Bold Body Text',
+    btnResetTypography: 'Reset Typography',
+    docAddProductFromCatalog: 'Insert from Product Catalog...',
+    docAddBlankRow: 'Add Product Row',
+    docAddPackingRow: 'Add Packing Row',
+    docResetPackingAuto: 'Rebuild Auto Rows',
+    docDeleteRowLabel: 'Delete row',
+    docDeleteSectionLabel: 'Remove block',
+    docRestoreSectionsLabel: 'Restore hidden blocks',
   },
 };

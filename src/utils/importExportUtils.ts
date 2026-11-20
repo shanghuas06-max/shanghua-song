@@ -38,6 +38,7 @@ import {
   numberToContractWords,
 } from './contractDefaults';
 import { sanitizeId } from './firestoreSanitizers';
+import { DOC_FONT_EXCEL_MAP, resolveDocStyle } from './docStyleUtils';
 
 type XlsxModule = typeof import('xlsx-js-style');
 const XLSX: XlsxModule =
@@ -797,6 +798,13 @@ function buildPartyExcelLines(
   party: Customer | undefined,
   overrideName?: string,
   overrideAddress?: string,
+  extra?: {
+    country?: string;
+    contact?: string;
+    phone?: string;
+    fax?: string;
+    taxId?: string;
+  },
 ): string[] {
   const lines: string[] = [heading];
   lines.push((overrideName || party?.name || '—').toUpperCase());
@@ -808,11 +816,16 @@ function buildPartyExcelLines(
       .filter(Boolean)
       .forEach((l) => lines.push(l));
   }
-  if (party?.country) lines.push(party.country);
-  if (party?.contactName) lines.push(`Attn : ${party.contactName}`);
-  if (party?.phone) lines.push(`Mobile : ${party.phone}`);
-  if (party?.fax) lines.push(`Fax : ${party.fax}`);
-  if (party?.taxOrImporterId) lines.push(`Tax ID : ${party.taxOrImporterId}`);
+  const country = extra?.country !== undefined ? extra.country : party?.country;
+  const contact = extra?.contact !== undefined ? extra.contact : party?.contactName;
+  const phone = extra?.phone !== undefined ? extra.phone : party?.phone;
+  const fax = extra?.fax !== undefined ? extra.fax : party?.fax;
+  const taxId = extra?.taxId !== undefined ? extra.taxId : party?.taxOrImporterId;
+  if (country) lines.push(country);
+  if (contact) lines.push(`Attn : ${contact}`);
+  if (phone) lines.push(`Mobile : ${phone}`);
+  if (fax) lines.push(`Fax : ${fax}`);
+  if (taxId) lines.push(`Tax ID : ${taxId}`);
   return lines;
 }
 
@@ -943,6 +956,82 @@ export function buildFormalDocumentWorkbook(
     .map((l) => l.trim())
     .filter(Boolean);
 
+  const docStyle = resolveDocStyle(order.docSpecialFields?.docStyle);
+  const excelFontName = DOC_FONT_EXCEL_MAP[docStyle.fontFamily];
+  const baseScale = docStyle.baseFontSizePx / 11;
+  const tableScale = docStyle.tableFontSizePx / 10.5;
+  const titleScale = docStyle.titleFontSizePx / 18;
+  const densityHeightFactor =
+    docStyle.cellDensity === 'compact'
+      ? 0.85
+      : docStyle.cellDensity === 'relaxed'
+        ? 1.25
+        : 1;
+  const pt = (basePt: number, scale = baseScale) =>
+    Number(Math.max(7, Math.min(30, basePt * scale)).toFixed(1));
+  const rowH = (hpt: number) =>
+    Math.max(12, Math.round(hpt * densityHeightFactor));
+  const bodyBold = docStyle.boldBody ? true : undefined;
+  const hiddenSections = new Set(order.docSpecialFields?.hiddenSections ?? []);
+
+  const supplierTelText = getDocOverride(
+    order,
+    'inv.supplierTel',
+    supplier?.phone || '81-6-6784-1131',
+  );
+  const supplierFaxText = getDocOverride(
+    order,
+    'inv.supplierFax',
+    supplier?.fax || '',
+  );
+  const supplierTaxIdText = getDocOverride(
+    order,
+    'inv.supplierTaxId',
+    supplier?.taxOrExporterId || '',
+  );
+  const shipmentLineText = getDocOverride(
+    order,
+    'inv.shipmentText',
+    `on ${shipmentDate}`,
+  );
+  const vesselText = getDocOverride(
+    order,
+    'inv.vessel',
+    order.shipping.vesselOrFlightOrCourier || '',
+  );
+  const etdText = getDocOverride(order, 'inv.etd', etdDisplay);
+  const etaText = getDocOverride(order, 'inv.eta', etaDisplay);
+  const ctnFooterLine = getDocOverride(
+    order,
+    'inv.ctnLine',
+    pallets > 1
+      ? `CTN NO. 1 / ${pallets} - ${pallets} / ${pallets}`
+      : `CTN NO. 1 - ${Math.max(1, summary.totalCartons)}`,
+  );
+  const madeInFooterLine = getDocOverride(
+    order,
+    'inv.madeInLine',
+    `MADE IN ${originCountry}`,
+  );
+  const signatoryCompanyText = getDocOverride(
+    order,
+    'inv.signatoryCompany',
+    supplierNameText,
+  );
+  const signatoryNameText =
+    order.docSpecialFields?.showSignature === false
+      ? ''
+      : getDocOverride(
+          order,
+          'inv.signatoryName',
+          supplier?.signatoryName || 'Mr. Song Shanghua',
+        );
+  const signatoryTitleText = getDocOverride(
+    order,
+    'inv.signatoryTitle',
+    supplier?.signatoryTitle || 'Overseas Sales',
+  );
+
   // ---------------- SHEET 1: INVOICE (11 columns A..K) ----------------
   const invAoa: (string | number)[][] = [];
   const invMerges: XlsxTypes.Range[] = [];
@@ -958,7 +1047,7 @@ export function buildFormalDocumentWorkbook(
     const row = new Array(11).fill('') as (string | number)[];
     row[colStart] = text;
     invAoa.push(row);
-    invRowHeights[r] = { hpt };
+    invRowHeights[r] = { hpt: rowH(hpt) };
     if (colEnd > colStart) {
       invMerges.push({ s: { r, c: colStart }, e: { r, c: colEnd } });
     }
@@ -971,9 +1060,9 @@ export function buildFormalDocumentWorkbook(
     const r = invAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = supAddrLines[0] ?? '';
-    row[9] = `Tel : ${supplier?.phone || '81-6-6784-1131'}`;
+    row[9] = `Tel : ${supplierTelText}`;
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 15 };
+    invRowHeights[r] = { hpt: rowH(15) };
     invMerges.push({ s: { r, c: 0 }, e: { r, c: 7 } });
     invMerges.push({ s: { r, c: 9 }, e: { r, c: 10 } });
   }
@@ -981,27 +1070,32 @@ export function buildFormalDocumentWorkbook(
     const r = invAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = supAddrLines.slice(1).join(' ');
-    row[9] = supplier?.fax ? `Fax : ${supplier.fax}` : '';
+    row[9] = supplierFaxText ? `Fax : ${supplierFaxText}` : '';
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 15 };
+    invRowHeights[r] = { hpt: rowH(15) };
     invMerges.push({ s: { r, c: 0 }, e: { r, c: 7 } });
     invMerges.push({ s: { r, c: 9 }, e: { r, c: 10 } });
   }
-  if (supplier?.taxOrExporterId) {
-    pushInvMergedRow(`Tax / Exporter ID : ${supplier.taxOrExporterId}`, 0, 7, 15);
+  if (supplierTaxIdText) {
+    pushInvMergedRow(`Tax / Exporter ID : ${supplierTaxIdText}`, 0, 7, 15);
   }
   invAoa.push(new Array(11).fill(''));
   invRowHeights[invAoa.length - 1] = { hpt: 8 };
 
   // Title & Ref
-  const invTitleRow = pushInvMergedRow('INVOICE', 0, 10, 22);
+  const invTitleRow = pushInvMergedRow(
+    getDocOverride(order, 'inv.title', 'INVOICE'),
+    0,
+    10,
+    22,
+  );
   const invNoRow = pushInvMergedRow(`No. ${invoiceNoText}`, 0, 10, 17);
   {
     const r = invAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[9] = `Date : ${displayDate}`;
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 16 };
+    invRowHeights[r] = { hpt: rowH(16) };
     invMerges.push({ s: { r, c: 9 }, e: { r, c: 10 } });
   }
 
@@ -1012,6 +1106,13 @@ export function buildFormalDocumentWorkbook(
     billTo,
     getDocOverride(order, 'inv.billToName', billTo?.name || ''),
     getDocOverride(order, 'inv.billToAddress', billTo?.address || ''),
+    {
+      country: getDocOverride(order, 'inv.billToCountry', billTo?.country || ''),
+      contact: getDocOverride(order, 'inv.billToContact', billTo?.contactName || ''),
+      phone: getDocOverride(order, 'inv.billToPhone', billTo?.phone || ''),
+      fax: getDocOverride(order, 'inv.billToFax', billTo?.fax || ''),
+      taxId: getDocOverride(order, 'inv.billToTaxId', billTo?.taxOrImporterId || ''),
+    },
   )) {
     pushInvMergedRow(line, 0, 8, 15);
   }
@@ -1023,6 +1124,13 @@ export function buildFormalDocumentWorkbook(
     customer,
     getDocOverride(order, 'inv.shipToName', customer?.name || ''),
     getDocOverride(order, 'inv.shipToAddress', customer?.address || ''),
+    {
+      country: getDocOverride(order, 'inv.shipToCountry', customer?.country || ''),
+      contact: getDocOverride(order, 'inv.shipToContact', customer?.contactName || ''),
+      phone: getDocOverride(order, 'inv.shipToPhone', customer?.phone || ''),
+      fax: getDocOverride(order, 'inv.shipToFax', customer?.fax || ''),
+      taxId: getDocOverride(order, 'inv.shipToTaxId', customer?.taxOrImporterId || ''),
+    },
   )) {
     pushInvMergedRow(line, 0, 8, 15);
   }
@@ -1030,20 +1138,18 @@ export function buildFormalDocumentWorkbook(
   invRowHeights[invAoa.length - 1] = { hpt: 8 };
 
   // Shipment info
-  pushInvMergedRow(`Shipment : on ${shipmentDate}`, 0, 7, 15);
+  pushInvMergedRow(`Shipment : ${shipmentLineText}`, 0, 7, 15);
   pushInvMergedRow(
     `Loading port : ${getDocOverride(order, 'inv.portOfLoading', order.shipping.portOfLoading || '—')}${
-      order.shipping.vesselOrFlightOrCourier
-        ? ` by "${order.shipping.vesselOrFlightOrCourier}"`
-        : ''
-    }${etdDisplay ? ` ETD ${etdDisplay}` : ''}`,
+      vesselText ? ` by "${vesselText}"` : ''
+    }${etdText ? ` ETD ${etdText}` : ''}`,
     0,
     8,
     15,
   );
   pushInvMergedRow(
     `Destination : ${getDocOverride(order, 'inv.portOfDischarge', order.shipping.portOfDischarge || '—')}${
-      etaDisplay ? ` ETA ${etaDisplay}` : ''
+      etaText ? ` ETA ${etaText}` : ''
     }`,
     0,
     8,
@@ -1056,26 +1162,37 @@ export function buildFormalDocumentWorkbook(
     const r = invAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = `ITEM : ${getDocOverride(order, 'inv.itemHeader', order.itemHeader?.trim() || 'HARDLOCK NUT (HLN)')}`;
-    row[7] = '*Seller -> Buyer transaction value only';
+    row[7] = getDocOverride(
+      order,
+      'inv.txNote',
+      '*Seller -> Buyer transaction value only',
+    );
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 16 };
+    invRowHeights[r] = { hpt: rowH(16) };
     invMerges.push({ s: { r, c: 0 }, e: { r, c: 5 } });
     invMerges.push({ s: { r, c: 7 }, e: { r, c: 10 } });
   }
   {
     const r = invAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
-    row[8] = `*Currency : ${formatCurrencyLabel(order.currency)}`;
+    row[8] = `*Currency : ${getDocOverride(order, 'inv.currencyLabel', formatCurrencyLabel(order.currency))}`;
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 15 };
+    invRowHeights[r] = { hpt: rowH(15) };
     invMerges.push({ s: { r, c: 8 }, e: { r, c: 10 } });
   }
-  if (order.currency !== 'JPY') {
+  const hasExchangeRateRow =
+    order.currency !== 'JPY' ||
+    order.docOverrides?.['inv.exchangeRateLine'] !== undefined;
+  if (hasExchangeRateRow) {
     const r = invAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
-    row[8] = `*Exchange Rate : 1 ${order.currency} = ${effectiveRate} JPY`;
+    row[8] = `*Exchange Rate : ${getDocOverride(
+      order,
+      'inv.exchangeRateLine',
+      `1 ${order.currency} = ${effectiveRate} JPY`,
+    )}`;
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 15 };
+    invRowHeights[r] = { hpt: rowH(15) };
     invMerges.push({ s: { r, c: 8 }, e: { r, c: 10 } });
   }
 
@@ -1093,12 +1210,16 @@ export function buildFormalDocumentWorkbook(
       `Q'ty (${primaryUnit})`,
       'U.W (kg)',
       'N.W (kg)',
-      `${order.shipping.incoterm} ${placeShort} in ${order.currency}`,
+      getDocOverride(
+        order,
+        'inv.termColHeader',
+        `${order.shipping.incoterm} ${placeShort} in ${order.currency}`,
+      ),
       '',
     ]);
     invAoa.push(['', '', '', '', '', '', '', '', '', 'U. Price', 'Amount']);
-    invRowHeights[invTableHeaderRow1] = { hpt: 20 };
-    invRowHeights[invTableHeaderRow2] = { hpt: 18 };
+    invRowHeights[invTableHeaderRow1] = { hpt: rowH(20) };
+    invRowHeights[invTableHeaderRow2] = { hpt: rowH(18) };
     for (let c = 0; c <= 8; c++) {
       invMerges.push({
         s: { r: invTableHeaderRow1, c },
@@ -1118,12 +1239,15 @@ export function buildFormalDocumentWorkbook(
     const specs = resolveItemSpecs(item, prod);
     const calc = summary.lineItems[idx];
     const partDisplay = formatDocumentPartDisplay(item, ctx.customer, products);
+    const overriddenPart = getDocOverride(
+      order,
+      `inv.part.${item.id}`,
+      partDisplay.partName,
+    );
     const invItemCell =
-      partDisplay.sku &&
-      partDisplay.partName &&
-      partDisplay.partName !== partDisplay.sku
-        ? `${partDisplay.partName}\n(${partDisplay.sku})`
-        : partDisplay.partName || partDisplay.sku || '—';
+      partDisplay.sku && overriddenPart && overriddenPart !== partDisplay.sku
+        ? `${overriddenPart}\n(${partDisplay.sku})`
+        : overriddenPart || partDisplay.sku || '—';
     const r = invAoa.length;
     invAoa.push([
       idx + 1,
@@ -1138,7 +1262,7 @@ export function buildFormalDocumentWorkbook(
       item.unitPrice,
       calc?.amount ?? 0,
     ]);
-    invRowHeights[r] = { hpt: invItemCell.includes('\n') ? 26 : 17 };
+    invRowHeights[r] = { hpt: rowH(invItemCell.includes('\n') ? 26 : 17) };
   });
   const invDataEndRow = invAoa.length - 1;
 
@@ -1146,11 +1270,13 @@ export function buildFormalDocumentWorkbook(
   const invSubtotalRow = invAoa.length;
   {
     const row = new Array(11).fill('') as (string | number)[];
-    row[0] = footnotes[0] ?? '';
+    row[0] = hiddenSections.has('inv.footnotes')
+      ? ''
+      : getDocOverride(order, 'inv.footnote0', footnotes[0] ?? '');
     row[6] = summary.totalQuantity;
     row[8] = cleanFloat(summary.totalNetWeightKg);
     invAoa.push(row);
-    invRowHeights[invSubtotalRow] = { hpt: 16 };
+    invRowHeights[invSubtotalRow] = { hpt: rowH(16) };
     invMerges.push({ s: { r: invSubtotalRow, c: 0 }, e: { r: invSubtotalRow, c: 5 } });
   }
 
@@ -1193,12 +1319,17 @@ export function buildFormalDocumentWorkbook(
   costRows.forEach((cr, rIdx) => {
     const r = invAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
-    row[0] =
-      rIdx === 0 ? footnotes[1] ?? '' : rIdx === 1 ? footnotes[2] ?? '' : '';
+    row[0] = hiddenSections.has('inv.footnotes')
+      ? ''
+      : rIdx === 0
+        ? getDocOverride(order, 'inv.footnote1', footnotes[1] ?? '')
+        : rIdx === 1
+          ? getDocOverride(order, 'inv.footnote2', footnotes[2] ?? '')
+          : '';
     row[6] = cr.label;
     row[10] = formatDocMoney(cr.amount, order.currency);
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 16 };
+    invRowHeights[r] = { hpt: rowH(16) };
     invMerges.push({ s: { r, c: 0 }, e: { r, c: 5 } });
     invMerges.push({ s: { r, c: 6 }, e: { r, c: 9 } });
   });
@@ -1210,7 +1341,7 @@ export function buildFormalDocumentWorkbook(
     row[6] = `${order.shipping.incoterm} ${placeShort}`;
     row[10] = formatDocMoney(summary.incotermTotal, order.currency);
     invAoa.push(row);
-    invRowHeights[invFinalTotalRow] = { hpt: 19 };
+    invRowHeights[invFinalTotalRow] = { hpt: rowH(19) };
     invMerges.push({ s: { r: invFinalTotalRow, c: 6 }, e: { r: invFinalTotalRow, c: 9 } });
   }
 
@@ -1253,9 +1384,9 @@ export function buildFormalDocumentWorkbook(
       'inv.grossWeightSummary',
       `G/W : approx. ${formatWeight1(summary.totalGrossWeightKg)} kg`,
     );
-    row[8] = freightLabel;
+    row[8] = getDocOverride(order, 'inv.freightLabel', freightLabel);
     invAoa.push(row);
-    invRowHeights[invFreightFlagRow] = { hpt: 16 };
+    invRowHeights[invFreightFlagRow] = { hpt: rowH(16) };
     invMerges.push({ s: { r: invFreightFlagRow, c: 0 }, e: { r: invFreightFlagRow, c: 7 } });
     invMerges.push({ s: { r: invFreightFlagRow, c: 8 }, e: { r: invFreightFlagRow, c: 10 } });
   }
@@ -1267,9 +1398,13 @@ export function buildFormalDocumentWorkbook(
       'inv.volumeSummary',
       `Vol. : approx. ${formatNumberNoRound(summary.totalCbm, 3)}M3`,
     );
-    row[8] = `COUNTRY OF ORIGIN : ${originCountry}`;
+    row[8] = getDocOverride(
+      order,
+      'inv.originText',
+      `COUNTRY OF ORIGIN : ${originCountry}`,
+    );
     invAoa.push(row);
-    invRowHeights[invOriginRow] = { hpt: 16 };
+    invRowHeights[invOriginRow] = { hpt: rowH(16) };
     invMerges.push({ s: { r: invOriginRow, c: 0 }, e: { r: invOriginRow, c: 7 } });
     invMerges.push({ s: { r: invOriginRow, c: 8 }, e: { r: invOriginRow, c: 10 } });
   }
@@ -1283,29 +1418,38 @@ export function buildFormalDocumentWorkbook(
     0,
     10,
   );
-  const invBankHeadingRow = pushInvMergedRow('Bank Information', 0, 10);
-  if (bank) {
-    pushInvMergedRow(
-      `${bank.bankName}${bank.swiftCode ? ` (BIC : ${bank.swiftCode})` : ''}`,
-      0,
-      10,
-    );
-    if (bank.branchName) pushInvMergedRow(bank.branchName, 0, 10);
-    pushInvMergedRow(`Account No. : ${bank.accountNumber}`, 0, 10);
+  let invBankHeadingRow: number | undefined;
+  if (!hiddenSections.has('inv.bankInfo')) {
+    invBankHeadingRow = pushInvMergedRow('Bank Information', 0, 10);
+    const defaultBankText = bank
+      ? [
+          `${bank.bankName}${bank.swiftCode ? ` (BIC : ${bank.swiftCode})` : ''}`,
+          bank.branchName || '',
+          `Account No. : ${bank.accountNumber}`,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : '';
+    const bankInfoResolved = getDocOverride(order, 'inv.bankInfo', defaultBankText);
+    if (bankInfoResolved.trim()) {
+      bankInfoResolved
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .forEach((line) => pushInvMergedRow(line, 0, 10));
+    }
   }
-  const remarksText = getDocOverride(order, 'inv.remarks', order.remarks || '');
-  if (remarksText) {
-    pushInvMergedRow(`Remarks : ${remarksText}`, 0, 10);
+  if (!hiddenSections.has('inv.remarks')) {
+    const remarksText = getDocOverride(order, 'inv.remarks', order.remarks || '');
+    if (remarksText) {
+      pushInvMergedRow(`Remarks : ${remarksText}`, 0, 10);
+    }
   }
 
   invAoa.push(new Array(11).fill(''));
   invRowHeights[invAoa.length - 1] = { hpt: 10 };
 
   // Footer: Marks + Signatory
-  const ctnFooterLine =
-    pallets > 1
-      ? `CTN NO. 1 / ${pallets} - ${pallets} / ${pallets}`
-      : `CTN NO. 1 - ${Math.max(1, summary.totalCartons)}`;
   const invFooterStart = invAoa.length;
   {
     const r = invAoa.length;
@@ -1315,9 +1459,9 @@ export function buildFormalDocumentWorkbook(
       'inv.shippingMarks',
       order.shipping.shippingMarksMain || '',
     );
-    row[7] = supplierNameText;
+    row[7] = signatoryCompanyText;
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 16 };
+    invRowHeights[r] = { hpt: rowH(16) };
     invMerges.push({ s: { r, c: 0 }, e: { r, c: 5 } });
     invMerges.push({ s: { r, c: 7 }, e: { r, c: 10 } });
   }
@@ -1325,12 +1469,9 @@ export function buildFormalDocumentWorkbook(
   {
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = `HARDLOCK No. ${invoiceNoText}`;
-    row[7] =
-      order.docSpecialFields?.showSignature === false
-        ? ''
-        : supplier?.signatoryName || 'Mr. Song Shanghua';
+    row[7] = signatoryNameText;
     invAoa.push(row);
-    invRowHeights[invSignatoryNameRow] = { hpt: 22 };
+    invRowHeights[invSignatoryNameRow] = { hpt: rowH(22) };
     invMerges.push({ s: { r: invSignatoryNameRow, c: 0 }, e: { r: invSignatoryNameRow, c: 5 } });
     invMerges.push({ s: { r: invSignatoryNameRow, c: 7 }, e: { r: invSignatoryNameRow, c: 10 } });
   }
@@ -1338,13 +1479,13 @@ export function buildFormalDocumentWorkbook(
     const r = invAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = ctnFooterLine;
-    row[7] = supplier?.signatoryTitle || 'Overseas Sales';
+    row[7] = signatoryTitleText;
     invAoa.push(row);
-    invRowHeights[r] = { hpt: 16 };
+    invRowHeights[r] = { hpt: rowH(16) };
     invMerges.push({ s: { r, c: 0 }, e: { r, c: 5 } });
     invMerges.push({ s: { r, c: 7 }, e: { r, c: 10 } });
   }
-  pushInvMergedRow(`MADE IN ${originCountry}`, 0, 5);
+  pushInvMergedRow(madeInFooterLine, 0, 5);
 
   const invSpecial = appendSpecialFieldsExcelRows(
     invAoa,
@@ -1374,58 +1515,78 @@ export function buildFormalDocumentWorkbook(
 
   // Apply commercial styling to INVOICE sheet
   styleRange(invoiceSheet, 0, 0, invAoa.length - 1, 10, {
-    font: { name: 'Times New Roman', sz: 10, color: { rgb: '0F172A' } },
+    font: {
+      name: excelFontName,
+      sz: pt(10),
+      bold: bodyBold,
+      color: { rgb: '0F172A' },
+    },
     alignment: { vertical: 'center' },
   });
   styleRange(invoiceSheet, invLetterheadRow, 0, invLetterheadRow, 10, {
-    font: { name: 'Times New Roman', sz: 18, bold: true, color: { rgb: '000000' } },
+    font: {
+      name: excelFontName,
+      sz: pt(18, titleScale),
+      bold: true,
+      color: { rgb: '000000' },
+    },
     alignment: { horizontal: 'center', vertical: 'center' },
     border: { bottom: MEDIUM_BLACK },
   });
   styleRange(invoiceSheet, invTitleRow, 0, invTitleRow, 10, {
-    font: { name: 'Times New Roman', sz: 14, bold: true, underline: true },
+    font: {
+      name: excelFontName,
+      sz: pt(14, titleScale),
+      bold: true,
+      underline: true,
+    },
     alignment: { horizontal: 'center', vertical: 'center' },
   });
   styleRange(invoiceSheet, invNoRow, 0, invNoRow, 10, {
-    font: { name: 'Times New Roman', sz: 11, bold: true },
+    font: { name: excelFontName, sz: pt(11), bold: true },
     alignment: { horizontal: 'center', vertical: 'center' },
   });
   applyCellStyle(invoiceSheet, invNoRow + 1, 9, {
-    font: { name: 'Times New Roman', sz: 10, bold: true },
+    font: { name: excelFontName, sz: pt(10), bold: true },
     alignment: { horizontal: 'right', vertical: 'center' },
   });
   applyCellStyle(invoiceSheet, billToStartRow, 0, {
-    font: { name: 'Times New Roman', sz: 10, bold: true, underline: true },
+    font: { name: excelFontName, sz: pt(10), bold: true, underline: true },
   });
   applyCellStyle(invoiceSheet, billToStartRow + 1, 0, {
-    font: { name: 'Times New Roman', sz: 10, bold: true },
+    font: { name: excelFontName, sz: pt(10), bold: true },
   });
   applyCellStyle(invoiceSheet, shipToStartRow, 0, {
-    font: { name: 'Times New Roman', sz: 10, bold: true, underline: true },
+    font: { name: excelFontName, sz: pt(10), bold: true, underline: true },
   });
   applyCellStyle(invoiceSheet, shipToStartRow + 1, 0, {
-    font: { name: 'Times New Roman', sz: 10, bold: true },
+    font: { name: excelFontName, sz: pt(10), bold: true },
   });
   applyCellStyle(invoiceSheet, invItemHeaderRow, 0, {
-    font: { name: 'Times New Roman', sz: 10.5, bold: true },
+    font: { name: excelFontName, sz: pt(10.5), bold: true },
   });
   applyCellStyle(invoiceSheet, invItemHeaderRow, 7, {
-    font: { name: 'Times New Roman', sz: 9.5, bold: true, italic: true },
+    font: { name: excelFontName, sz: pt(9.5), bold: true, italic: true },
     alignment: { horizontal: 'right', vertical: 'center' },
   });
   applyCellStyle(invoiceSheet, invItemHeaderRow + 1, 8, {
-    font: { name: 'Times New Roman', sz: 10, bold: true },
+    font: { name: excelFontName, sz: pt(10), bold: true },
     alignment: { horizontal: 'right', vertical: 'center' },
   });
-  if (order.currency !== 'JPY') {
+  if (hasExchangeRateRow) {
     applyCellStyle(invoiceSheet, invItemHeaderRow + 2, 8, {
-      font: { name: 'Times New Roman', sz: 10, bold: true },
+      font: { name: excelFontName, sz: pt(10), bold: true },
       alignment: { horizontal: 'right', vertical: 'center' },
     });
   }
   // Table headers
   styleRange(invoiceSheet, invTableHeaderRow1, 0, invTableHeaderRow2, 10, {
-    font: { name: 'Times New Roman', sz: 10, bold: true, color: { rgb: '000000' } },
+    font: {
+      name: excelFontName,
+      sz: pt(10, tableScale),
+      bold: true,
+      color: { rgb: '000000' },
+    },
     fill: { fgColor: { rgb: 'EEF2F6' } },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
     border: GRID_BORDER,
@@ -1433,7 +1594,7 @@ export function buildFormalDocumentWorkbook(
   // Data rows
   if (invDataEndRow >= invDataStartRow) {
     styleRange(invoiceSheet, invDataStartRow, 0, invDataEndRow, 10, {
-      font: { name: 'Times New Roman', sz: 10 },
+      font: { name: excelFontName, sz: pt(10, tableScale), bold: bodyBold },
       border: GRID_BORDER,
       alignment: { vertical: 'center' },
     });
@@ -1514,11 +1675,11 @@ export function buildFormalDocumentWorkbook(
     });
   }
   applyCellStyle(invoiceSheet, invFinalTotalRow, 6, {
-    font: { bold: true, sz: 10.5 },
+    font: { bold: true, sz: pt(10.5) },
     alignment: { horizontal: 'right', vertical: 'center' },
   });
   applyCellStyle(invoiceSheet, invFinalTotalRow, 10, {
-    font: { bold: true, sz: 10.5 },
+    font: { bold: true, sz: pt(10.5) },
     fill: { fgColor: { rgb: 'F8FAFC' } },
     alignment: { horizontal: 'right', vertical: 'center' },
     border: { top: THIN_BLACK, bottom: DOUBLE_BLACK },
@@ -1532,9 +1693,11 @@ export function buildFormalDocumentWorkbook(
     alignment: { horizontal: 'right' },
   });
   applyCellStyle(invoiceSheet, invPaymentRow, 0, { font: { bold: true } });
-  applyCellStyle(invoiceSheet, invBankHeadingRow, 0, {
-    font: { bold: true, underline: true },
-  });
+  if (invBankHeadingRow !== undefined) {
+    applyCellStyle(invoiceSheet, invBankHeadingRow, 0, {
+      font: { bold: true, underline: true },
+    });
+  }
   for (let r = invFooterStart; r <= invFooterStart + 3; r++) {
     applyCellStyle(invoiceSheet, r, 0, { font: { bold: true } });
   }
@@ -1571,7 +1734,7 @@ export function buildFormalDocumentWorkbook(
     const row = new Array(11).fill('') as (string | number)[];
     row[colStart] = text;
     plAoa.push(row);
-    plRowHeights[r] = { hpt };
+    plRowHeights[r] = { hpt: rowH(hpt) };
     if (colEnd > colStart) {
       plMerges.push({ s: { r, c: colStart }, e: { r, c: colEnd } });
     }
@@ -1583,9 +1746,9 @@ export function buildFormalDocumentWorkbook(
     const r = plAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = supAddrLines[0] ?? '';
-    row[9] = `Tel : ${supplier?.phone || '81-6-6784-1131'}`;
+    row[9] = `Tel : ${supplierTelText}`;
     plAoa.push(row);
-    plRowHeights[r] = { hpt: 15 };
+    plRowHeights[r] = { hpt: rowH(15) };
     plMerges.push({ s: { r, c: 0 }, e: { r, c: 7 } });
     plMerges.push({ s: { r, c: 9 }, e: { r, c: 10 } });
   }
@@ -1593,26 +1756,31 @@ export function buildFormalDocumentWorkbook(
     const r = plAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = supAddrLines.slice(1).join(' ');
-    row[9] = supplier?.fax ? `Fax : ${supplier.fax}` : '';
+    row[9] = supplierFaxText ? `Fax : ${supplierFaxText}` : '';
     plAoa.push(row);
-    plRowHeights[r] = { hpt: 15 };
+    plRowHeights[r] = { hpt: rowH(15) };
     plMerges.push({ s: { r, c: 0 }, e: { r, c: 7 } });
     plMerges.push({ s: { r, c: 9 }, e: { r, c: 10 } });
   }
-  if (supplier?.taxOrExporterId) {
-    pushPlMergedRow(`Tax / Exporter ID : ${supplier.taxOrExporterId}`, 0, 7, 15);
+  if (supplierTaxIdText) {
+    pushPlMergedRow(`Tax / Exporter ID : ${supplierTaxIdText}`, 0, 7, 15);
   }
   plAoa.push(new Array(11).fill(''));
   plRowHeights[plAoa.length - 1] = { hpt: 8 };
 
-  const plTitleRow = pushPlMergedRow('PACKING LIST', 0, 10, 22);
+  const plTitleRow = pushPlMergedRow(
+    getDocOverride(order, 'pl.title', 'PACKING LIST'),
+    0,
+    10,
+    22,
+  );
   const plNoRow = pushPlMergedRow(`INVOICE No. ${invoiceNoText}`, 0, 10, 17);
   {
     const r = plAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[9] = `Date : ${displayDate}`;
     plAoa.push(row);
-    plRowHeights[r] = { hpt: 16 };
+    plRowHeights[r] = { hpt: rowH(16) };
     plMerges.push({ s: { r, c: 9 }, e: { r, c: 10 } });
   }
 
@@ -1622,6 +1790,13 @@ export function buildFormalDocumentWorkbook(
     billTo,
     getDocOverride(order, 'inv.billToName', billTo?.name || ''),
     getDocOverride(order, 'inv.billToAddress', billTo?.address || ''),
+    {
+      country: getDocOverride(order, 'inv.billToCountry', billTo?.country || ''),
+      contact: getDocOverride(order, 'inv.billToContact', billTo?.contactName || ''),
+      phone: getDocOverride(order, 'inv.billToPhone', billTo?.phone || ''),
+      fax: getDocOverride(order, 'inv.billToFax', billTo?.fax || ''),
+      taxId: getDocOverride(order, 'inv.billToTaxId', billTo?.taxOrImporterId || ''),
+    },
   )) {
     pushPlMergedRow(line, 0, 8, 15);
   }
@@ -1633,25 +1808,30 @@ export function buildFormalDocumentWorkbook(
     customer,
     getDocOverride(order, 'inv.shipToName', customer?.name || ''),
     getDocOverride(order, 'inv.shipToAddress', customer?.address || ''),
+    {
+      country: getDocOverride(order, 'inv.shipToCountry', customer?.country || ''),
+      contact: getDocOverride(order, 'inv.shipToContact', customer?.contactName || ''),
+      phone: getDocOverride(order, 'inv.shipToPhone', customer?.phone || ''),
+      fax: getDocOverride(order, 'inv.shipToFax', customer?.fax || ''),
+      taxId: getDocOverride(order, 'inv.shipToTaxId', customer?.taxOrImporterId || ''),
+    },
   )) {
     pushPlMergedRow(line, 0, 8, 15);
   }
   plAoa.push(new Array(11).fill(''));
   plRowHeights[plAoa.length - 1] = { hpt: 8 };
 
-  pushPlMergedRow(`Shipment : on ${shipmentDate}`, 0, 7);
+  pushPlMergedRow(`Shipment : ${shipmentLineText}`, 0, 7);
   pushPlMergedRow(
     `Loading port : ${getDocOverride(order, 'inv.portOfLoading', order.shipping.portOfLoading || '—')}${
-      order.shipping.vesselOrFlightOrCourier
-        ? ` by "${order.shipping.vesselOrFlightOrCourier}"`
-        : ''
-    }${etdDisplay ? ` ETD ${etdDisplay}` : ''}`,
+      vesselText ? ` by "${vesselText}"` : ''
+    }${etdText ? ` ETD ${etdText}` : ''}`,
     0,
     8,
   );
   pushPlMergedRow(
     `Destination : ${getDocOverride(order, 'inv.portOfDischarge', order.shipping.portOfDischarge || '—')}${
-      etaDisplay ? ` ETA ${etaDisplay}` : ''
+      etaText ? ` ETA ${etaText}` : ''
     }`,
     0,
     8,
@@ -1661,8 +1841,9 @@ export function buildFormalDocumentWorkbook(
     /\./g,
     '',
   );
+  const plHsHeader = getDocOverride(order, 'pl.hsCodeHeader', compactHsDigits);
   const plItemHeaderRow = pushPlMergedRow(
-    `ITEM : ${getDocOverride(order, 'inv.itemHeader', order.itemHeader?.trim() || 'HARDLOCK NUT')} (HS CODE : ${compactHsDigits})`,
+    `ITEM : ${getDocOverride(order, 'inv.itemHeader', order.itemHeader?.trim() || 'HARDLOCK NUT')} (HS CODE : ${plHsHeader})`,
     0,
     9,
     17,
@@ -1683,7 +1864,7 @@ export function buildFormalDocumentWorkbook(
     'U.W (kg)',
     'T.W (kg)',
   ]);
-  plRowHeights[plTableHeaderRow] = { hpt: 24 };
+  plRowHeights[plTableHeaderRow] = { hpt: rowH(24) };
 
   const displayRows = buildPackingListDisplayRows(
     order.items,
@@ -1724,7 +1905,7 @@ export function buildFormalDocumentWorkbook(
       cleanFloat(dRow.unitWeightKg || 0),
       cleanFloat(dRow.totalWeightKg || 0),
     ]);
-    plRowHeights[r] = { hpt: plTypeCell.includes('\n') ? 26 : 17 };
+    plRowHeights[r] = { hpt: rowH(plTypeCell.includes('\n') ? 26 : 17) };
   });
   const plDataEndRow = plAoa.length - 1;
 
@@ -1748,12 +1929,14 @@ export function buildFormalDocumentWorkbook(
   const plSummaryRow = plAoa.length;
   {
     const row = new Array(11).fill('') as (string | number)[];
-    row[0] = footnotes.join(' | ');
+    row[0] = hiddenSections.has('pl.footnotes')
+      ? ''
+      : getDocOverride(order, 'pl.footnotes', footnotes.join(' | '));
     row[7] = `${plTotalCartons} cartons`;
     row[8] = cleanFloat(plTotalQty);
     row[10] = cleanFloat(plTotalTw);
     plAoa.push(row);
-    plRowHeights[plSummaryRow] = { hpt: 18 };
+    plRowHeights[plSummaryRow] = { hpt: rowH(18) };
     plMerges.push({ s: { r: plSummaryRow, c: 0 }, e: { r: plSummaryRow, c: 6 } });
   }
 
@@ -1784,9 +1967,9 @@ export function buildFormalDocumentWorkbook(
       'pl.netWeightSummary',
       `N/W : approx. ${formatWeight1(plTotalTw)} kg`,
     );
-    row[8] = `Country of Origin : ${originSentence}`;
+    row[8] = `Country of Origin : ${getDocOverride(order, 'pl.originSentence', originSentence)}`;
     plAoa.push(row);
-    plRowHeights[plOriginRow] = { hpt: 16 };
+    plRowHeights[plOriginRow] = { hpt: rowH(16) };
     plMerges.push({ s: { r: plOriginRow, c: 0 }, e: { r: plOriginRow, c: 7 } });
     plMerges.push({ s: { r: plOriginRow, c: 8 }, e: { r: plOriginRow, c: 10 } });
   }
@@ -1808,12 +1991,19 @@ export function buildFormalDocumentWorkbook(
     0,
     7,
   );
-  if (order.palletVolumeDetails) {
-    order.palletVolumeDetails
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .forEach((line) => pushPlMergedRow(line, 0, 7));
+  if (!hiddenSections.has('pl.palletVolumeDetails')) {
+    const palletDetailsText = getDocOverride(
+      order,
+      'pl.palletVolumeDetails',
+      order.palletVolumeDetails || '',
+    );
+    if (palletDetailsText) {
+      palletDetailsText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .forEach((line) => pushPlMergedRow(line, 0, 7));
+    }
   }
 
   plAoa.push(new Array(11).fill(''));
@@ -1827,9 +2017,9 @@ export function buildFormalDocumentWorkbook(
       'inv.shippingMarks',
       order.shipping.shippingMarksMain || '',
     );
-    row[7] = supplierNameText;
+    row[7] = signatoryCompanyText;
     plAoa.push(row);
-    plRowHeights[r] = { hpt: 16 };
+    plRowHeights[r] = { hpt: rowH(16) };
     plMerges.push({ s: { r, c: 0 }, e: { r, c: 5 } });
     plMerges.push({ s: { r, c: 7 }, e: { r, c: 10 } });
   }
@@ -1837,12 +2027,9 @@ export function buildFormalDocumentWorkbook(
   {
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = `HARDLOCK No. ${invoiceNoText}`;
-    row[7] =
-      order.docSpecialFields?.showSignature === false
-        ? ''
-        : supplier?.signatoryName || 'Mr. Song Shanghua';
+    row[7] = signatoryNameText;
     plAoa.push(row);
-    plRowHeights[plSignRow] = { hpt: 22 };
+    plRowHeights[plSignRow] = { hpt: rowH(22) };
     plMerges.push({ s: { r: plSignRow, c: 0 }, e: { r: plSignRow, c: 5 } });
     plMerges.push({ s: { r: plSignRow, c: 7 }, e: { r: plSignRow, c: 10 } });
   }
@@ -1850,13 +2037,13 @@ export function buildFormalDocumentWorkbook(
     const r = plAoa.length;
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = ctnFooterLine;
-    row[7] = supplier?.signatoryTitle || 'Overseas Sales';
+    row[7] = signatoryTitleText;
     plAoa.push(row);
-    plRowHeights[r] = { hpt: 16 };
+    plRowHeights[r] = { hpt: rowH(16) };
     plMerges.push({ s: { r, c: 0 }, e: { r, c: 5 } });
     plMerges.push({ s: { r, c: 7 }, e: { r, c: 10 } });
   }
-  pushPlMergedRow(`MADE IN ${originCountry}`, 0, 5);
+  pushPlMergedRow(madeInFooterLine, 0, 5);
 
   const plSpecial = appendSpecialFieldsExcelRows(
     plAoa,
@@ -1886,20 +2073,35 @@ export function buildFormalDocumentWorkbook(
 
   // Commercial styling for PACKING LIST sheet
   styleRange(packingSheet, 0, 0, plAoa.length - 1, 10, {
-    font: { name: 'Times New Roman', sz: 10, color: { rgb: '0F172A' } },
+    font: {
+      name: excelFontName,
+      sz: pt(10),
+      bold: bodyBold,
+      color: { rgb: '0F172A' },
+    },
     alignment: { vertical: 'center' },
   });
   styleRange(packingSheet, plLetterheadRow, 0, plLetterheadRow, 10, {
-    font: { name: 'Times New Roman', sz: 18, bold: true, color: { rgb: '000000' } },
+    font: {
+      name: excelFontName,
+      sz: pt(18, titleScale),
+      bold: true,
+      color: { rgb: '000000' },
+    },
     alignment: { horizontal: 'center', vertical: 'center' },
     border: { bottom: MEDIUM_BLACK },
   });
   styleRange(packingSheet, plTitleRow, 0, plTitleRow, 10, {
-    font: { name: 'Times New Roman', sz: 14, bold: true, underline: true },
+    font: {
+      name: excelFontName,
+      sz: pt(14, titleScale),
+      bold: true,
+      underline: true,
+    },
     alignment: { horizontal: 'center', vertical: 'center' },
   });
   styleRange(packingSheet, plNoRow, 0, plNoRow, 10, {
-    font: { name: 'Times New Roman', sz: 11, bold: true },
+    font: { name: excelFontName, sz: pt(11), bold: true },
     alignment: { horizontal: 'center', vertical: 'center' },
   });
   applyCellStyle(packingSheet, plNoRow + 1, 9, {
@@ -1915,17 +2117,22 @@ export function buildFormalDocumentWorkbook(
   });
   applyCellStyle(packingSheet, plDeliverStart + 1, 0, { font: { bold: true } });
   applyCellStyle(packingSheet, plItemHeaderRow, 0, {
-    font: { bold: true, sz: 10.5 },
+    font: { bold: true, sz: pt(10.5) },
   });
   styleRange(packingSheet, plTableHeaderRow, 0, plTableHeaderRow, 10, {
-    font: { bold: true, color: { rgb: '000000' } },
+    font: {
+      name: excelFontName,
+      sz: pt(10, tableScale),
+      bold: true,
+      color: { rgb: '000000' },
+    },
     fill: { fgColor: { rgb: 'EEF2F6' } },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
     border: GRID_BORDER,
   });
   if (plDataEndRow >= plDataStartRow) {
     styleRange(packingSheet, plDataStartRow, 0, plDataEndRow, 10, {
-      font: { name: 'Times New Roman', sz: 10 },
+      font: { name: excelFontName, sz: pt(10, tableScale), bold: bodyBold },
       border: GRID_BORDER,
       alignment: { vertical: 'center' },
     });
@@ -2162,12 +2369,15 @@ export function buildFormalDocumentWorkbook(
     const specs = resolveItemSpecs(item, prod);
     const calc = summary.lineItems[idx];
     const partDisplay = formatDocumentPartDisplay(item, ctx.customer, products);
+    const overriddenPart = getDocOverride(
+      order,
+      `inv.part.${item.id}`,
+      partDisplay.partName,
+    );
     const ctItemCell =
-      partDisplay.sku &&
-      partDisplay.partName &&
-      partDisplay.partName !== partDisplay.sku
-        ? `${partDisplay.partName}\n(${partDisplay.sku})`
-        : partDisplay.partName || partDisplay.sku || '—';
+      partDisplay.sku && overriddenPart && overriddenPart !== partDisplay.sku
+        ? `${overriddenPart}\n(${partDisplay.sku})`
+        : overriddenPart || partDisplay.sku || '—';
     const r = ctAoa.length;
     ctAoa.push([
       `${idx + 1}.`,
@@ -2179,7 +2389,7 @@ export function buildFormalDocumentWorkbook(
       calc?.amount ?? 0,
       '',
     ]);
-    ctRowHeights[r] = { hpt: ctItemCell.includes('\n') ? 26 : 17 };
+    ctRowHeights[r] = { hpt: rowH(ctItemCell.includes('\n') ? 26 : 17) };
     ctMerges.push({ s: { r, c: 6 }, e: { r, c: 7 } });
   });
   const ctDataEnd = ctAoa.length - 1;
@@ -2357,33 +2567,44 @@ export function buildFormalDocumentWorkbook(
 
   // Style CONTRACT sheet
   styleRange(contractSheet, 0, 0, ctAoa.length - 1, 7, {
-    font: { name: 'Times New Roman', sz: 10, color: { rgb: '0F172A' } },
+    font: {
+      name: excelFontName,
+      sz: pt(10),
+      bold: bodyBold,
+      color: { rgb: '0F172A' },
+    },
     alignment: { vertical: 'center' },
   });
   styleRange(contractSheet, ctHeaderBanner, 0, ctHeaderBanner, 7, {
-    font: { sz: 10, bold: true },
+    font: { name: excelFontName, sz: pt(10), bold: true },
     alignment: { horizontal: 'right', vertical: 'center' },
     border: { bottom: THIN_BLACK },
   });
   styleRange(contractSheet, ctTitleCnRow, 0, ctTitleCnRow, 7, {
-    font: { sz: 16, bold: true },
+    font: { name: excelFontName, sz: pt(16, titleScale), bold: true },
     alignment: { horizontal: 'center', vertical: 'center' },
   });
   styleRange(contractSheet, ctTitleEnRow, 0, ctTitleEnRow, 7, {
-    font: { sz: 16, bold: true },
+    font: { name: excelFontName, sz: pt(16, titleScale), bold: true },
     alignment: { horizontal: 'center', vertical: 'center' },
   });
   applyCellStyle(contractSheet, ctPreambleRow, 0, {
     alignment: { wrapText: true, vertical: 'center' },
   });
   styleRange(contractSheet, ctTableHead1, 0, ctTableHead2, 7, {
-    font: { bold: true, color: { rgb: '000000' } },
+    font: {
+      name: excelFontName,
+      sz: pt(10, tableScale),
+      bold: true,
+      color: { rgb: '000000' },
+    },
     fill: { fgColor: { rgb: 'EEF2F6' } },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
     border: GRID_BORDER,
   });
   if (ctDataEnd >= ctDataStart) {
     styleRange(contractSheet, ctDataStart, 0, ctDataEnd, 7, {
+      font: { name: excelFontName, sz: pt(10, tableScale), bold: bodyBold },
       border: GRID_BORDER,
       alignment: { vertical: 'center' },
     });
@@ -2438,7 +2659,7 @@ export function buildFormalDocumentWorkbook(
   });
   for (let r = ctClausesStart; r <= ctClausesEnd; r++) {
     applyCellStyle(contractSheet, r, 0, {
-      font: { sz: 9.5 },
+      font: { sz: pt(9.5), bold: bodyBold },
       alignment: { wrapText: true, vertical: 'top' },
     });
   }

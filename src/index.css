@@ -22,8 +22,32 @@
   }
 
   .hardlock-doc-sheet {
-    font-family: "Times New Roman", Times, Georgia, "Noto Serif JP", "Noto Serif SC", serif;
+    font-family: var(--doc-font-family, "Times New Roman", Times, Georgia, "Noto Serif JP", "Noto Serif SC", serif);
+    font-size: var(--doc-base-size, 11px);
+    line-height: var(--doc-line-height, 1.35);
+    font-weight: var(--doc-body-weight, 400);
     font-variant-numeric: tabular-nums;
+  }
+
+  .hardlock-doc-sheet .doc-company-title {
+    font-size: var(--doc-company-size, 22px);
+  }
+
+  .hardlock-doc-sheet .doc-title {
+    font-size: var(--doc-title-size, 18px);
+  }
+
+  .hardlock-doc-sheet .doc-table {
+    font-size: var(--doc-table-size, 10.5px);
+  }
+
+  .hardlock-doc-sheet .doc-table th,
+  .hardlock-doc-sheet .doc-table td {
+    padding: var(--doc-cell-py, 3px) var(--doc-cell-px, 6px);
+  }
+
+  .hardlock-doc-sheet .doc-small-sub {
+    font-size: var(--doc-small-size, 9px);
   }
 
   .editable-doc-field {

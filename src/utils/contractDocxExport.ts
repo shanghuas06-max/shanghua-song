@@ -42,6 +42,7 @@ import {
   computeDocxImageBox,
   parseDataUrlImage,
 } from './imageUploadUtils';
+import { DOC_FONT_DOCX_MAP, resolveDocStyle } from './docStyleUtils';
 
 export interface ContractDocxExportContext {
   customer?: Customer;
@@ -52,7 +53,7 @@ export interface ContractDocxExportContext {
   contractSettings?: ContractSettings;
 }
 
-const FONT_CONFIG = {
+const DEFAULT_FONT_CONFIG = {
   ascii: 'Times New Roman',
   hAnsi: 'Times New Roman',
   cs: 'Times New Roman',
@@ -120,7 +121,7 @@ function makeRuns(
     italics?: boolean;
     size?: number;
     color?: string;
-    font?: typeof FONT_CONFIG;
+    font?: typeof DEFAULT_FONT_CONFIG;
   },
 ): TextRun[] {
   const lines = String(text ?? '').split(/\r?\n/);
@@ -136,7 +137,7 @@ function makeRuns(
         italics: opts?.italics,
         size: opts?.size ?? 20, // 10pt
         color: opts?.color ?? '000000',
-        font: opts?.font ?? FONT_CONFIG,
+        font: opts?.font ?? DEFAULT_FONT_CONFIG,
       }),
     );
   });
@@ -154,6 +155,9 @@ function makeCell(
     size?: number;
     shading?: string;
     borders?: typeof CELL_ALL_BORDERS;
+    font?: typeof DEFAULT_FONT_CONFIG;
+    margins?: { top: number; bottom: number; left: number; right: number };
+    line?: number;
   },
 ): TableCell {
   const lines = String(text ?? '').split(/\r?\n/);
@@ -161,14 +165,14 @@ function makeCell(
     (line) =>
       new Paragraph({
         alignment: opts?.align ?? AlignmentType.LEFT,
-        spacing: { before: 30, after: 30, line: 260 },
+        spacing: { before: 30, after: 30, line: opts?.line ?? 260 },
         children: [
           new TextRun({
             text: line,
             bold: opts?.bold,
             size: opts?.size ?? 19, // 9.5pt
             color: '000000',
-            font: FONT_CONFIG,
+            font: opts?.font ?? DEFAULT_FONT_CONFIG,
           }),
         ],
       }),
@@ -182,7 +186,7 @@ function makeCell(
     columnSpan: opts?.colSpan,
     rowSpan: opts?.rowSpan,
     verticalAlign: VerticalAlign.CENTER,
-    margins: { top: 60, bottom: 60, left: 90, right: 90 },
+    margins: opts?.margins ?? { top: 60, bottom: 60, left: 90, right: 90 },
     shading: opts?.shading
       ? { type: ShadingType.SOLID, color: opts.shading, fill: opts.shading }
       : undefined,
@@ -201,6 +205,60 @@ export function buildContractDocxDocument(
   const buyer = ctx.billToCustomer ?? customer;
   const products = ctx.products ?? [];
   const settings = ctx.contractSettings ?? createDefaultContractSettings();
+  const docStyle = resolveDocStyle(order.docSpecialFields?.docStyle);
+  const docxFont = DOC_FONT_DOCX_MAP[docStyle.fontFamily];
+  const baseScale = docStyle.baseFontSizePx / 11;
+  const tableScale = docStyle.tableFontSizePx / 10.5;
+  const titleScale = docStyle.titleFontSizePx / 18;
+  const hp = (baseHalfPt: number, scale = baseScale) =>
+    Math.max(14, Math.min(60, Math.round(baseHalfPt * scale)));
+  const docxLine = Math.max(200, Math.min(440, Math.round((docStyle.lineHeight / 1.35) * 260)));
+  const docxClauseLine = Math.max(220, Math.min(480, Math.round((docStyle.lineHeight / 1.35) * 280)));
+  const cellMargins =
+    docStyle.cellDensity === 'compact'
+      ? { top: 35, bottom: 35, left: 60, right: 60 }
+      : docStyle.cellDensity === 'relaxed'
+        ? { top: 95, bottom: 95, left: 120, right: 120 }
+        : { top: 60, bottom: 60, left: 90, right: 90 };
+  const bodyBold = docStyle.boldBody ? true : undefined;
+
+  const docRuns = (
+    text: string,
+    opts?: {
+      bold?: boolean;
+      italics?: boolean;
+      size?: number;
+      color?: string;
+    },
+  ) =>
+    makeRuns(text, {
+      ...opts,
+      bold: opts?.bold ?? bodyBold,
+      size: hp(opts?.size ?? 20),
+      font: docxFont,
+    });
+
+  const docCell = (
+    text: string,
+    opts?: {
+      widthPct?: number;
+      colSpan?: number;
+      rowSpan?: number;
+      align?: (typeof AlignmentType)[keyof typeof AlignmentType];
+      bold?: boolean;
+      size?: number;
+      shading?: string;
+      borders?: typeof CELL_ALL_BORDERS;
+    },
+  ) =>
+    makeCell(text, {
+      ...opts,
+      bold: opts?.bold ?? bodyBold,
+      size: hp(opts?.size ?? 19, tableScale),
+      font: docxFont,
+      margins: cellMargins,
+      line: docxLine,
+    });
 
   const summary = calculateOrderSummary(
     order.items,
@@ -307,7 +365,7 @@ export function buildContractDocxDocument(
     new TableRow({
       tableHeader: true,
       children: [
-        makeCell('项目\nITEM\nNO.', {
+        docCell('项目\nITEM\nNO.', {
           widthPct: 8,
           rowSpan: 2,
           align: AlignmentType.CENTER,
@@ -315,7 +373,7 @@ export function buildContractDocxDocument(
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell('商品名称及规格\nNAME OF COMMODITY & SPECIFICATION', {
+        docCell('商品名称及规格\nNAME OF COMMODITY & SPECIFICATION', {
           widthPct: 50,
           colSpan: 3,
           align: AlignmentType.CENTER,
@@ -323,21 +381,21 @@ export function buildContractDocxDocument(
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell('数量\nQUANTITY', {
+        docCell('数量\nQUANTITY', {
           widthPct: 12,
           align: AlignmentType.CENTER,
           bold: true,
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell('单价\nUNIT PRICE', {
+        docCell('单价\nUNIT PRICE', {
           widthPct: 14,
           align: AlignmentType.CENTER,
           bold: true,
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell('总价\nTOTAL PRICE', {
+        docCell('总价\nTOTAL PRICE', {
           widthPct: 16,
           align: AlignmentType.CENTER,
           bold: true,
@@ -349,42 +407,42 @@ export function buildContractDocxDocument(
     new TableRow({
       tableHeader: true,
       children: [
-        makeCell('ITEM', {
+        docCell('ITEM', {
           widthPct: 18,
           align: AlignmentType.CENTER,
           bold: true,
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell('SIZE/PITCH', {
+        docCell('SIZE/PITCH', {
           widthPct: 14,
           align: AlignmentType.CENTER,
           bold: true,
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell('MATERIAL / FINISH', {
+        docCell('MATERIAL / FINISH', {
           widthPct: 18,
           align: AlignmentType.CENTER,
           bold: true,
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell(primaryUnit, {
+        docCell(primaryUnit, {
           widthPct: 12,
           align: AlignmentType.CENTER,
           bold: true,
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell(order.currency, {
+        docCell(order.currency, {
           widthPct: 14,
           align: AlignmentType.CENTER,
           bold: true,
           size: 18,
           shading: 'F8FAFC',
         }),
-        makeCell(order.currency, {
+        docCell(order.currency, {
           widthPct: 16,
           align: AlignmentType.CENTER,
           bold: true,
@@ -399,6 +457,15 @@ export function buildContractDocxDocument(
     const prod = products.find((p) => p.id === item.productId);
     const specs = resolveItemSpecs(item, prod);
     const partDisplay = formatDocumentPartDisplay(item, customer, products);
+    const overriddenPart = getDocOverride(
+      order,
+      `inv.part.${item.id}`,
+      partDisplay.partName,
+    );
+    const displayLabel =
+      partDisplay.sku && overriddenPart && overriddenPart !== partDisplay.sku
+        ? `${overriddenPart}\n(${partDisplay.sku})`
+        : overriddenPart || partDisplay.sku || '—';
     const calc = summary.lineItems[idx];
     const matFinish = [specs.material, specs.surfaceFinish]
       .filter(Boolean)
@@ -406,31 +473,31 @@ export function buildContractDocxDocument(
     tableRows.push(
       new TableRow({
         children: [
-          makeCell(`${idx + 1}.`, {
+          docCell(`${idx + 1}.`, {
             align: AlignmentType.CENTER,
             size: 19,
           }),
-          makeCell(partDisplay.combinedLabel, {
+          docCell(displayLabel, {
             bold: true,
             size: 19,
           }),
-          makeCell(specs.size || '—', {
+          docCell(specs.size || '—', {
             align: AlignmentType.CENTER,
             size: 19,
           }),
-          makeCell(matFinish || '—', {
+          docCell(matFinish || '—', {
             align: AlignmentType.CENTER,
             size: 19,
           }),
-          makeCell(item.quantity.toLocaleString(), {
+          docCell(item.quantity.toLocaleString(), {
             align: AlignmentType.RIGHT,
             size: 19,
           }),
-          makeCell(formatDocMoney(item.unitPrice, order.currency), {
+          docCell(formatDocMoney(item.unitPrice, order.currency), {
             align: AlignmentType.RIGHT,
             size: 19,
           }),
-          makeCell(formatDocMoney(calc?.amount ?? 0, order.currency), {
+          docCell(formatDocMoney(calc?.amount ?? 0, order.currency), {
             align: AlignmentType.RIGHT,
             size: 19,
           }),
@@ -442,13 +509,13 @@ export function buildContractDocxDocument(
   tableRows.push(
     new TableRow({
       children: [
-        makeCell('Ex-works Total', {
+        docCell('Ex-works Total', {
           colSpan: 6,
           align: AlignmentType.RIGHT,
           bold: true,
           size: 19,
         }),
-        makeCell(formatDocMoney(summary.exwTotal, order.currency), {
+        docCell(formatDocMoney(summary.exwTotal, order.currency), {
           align: AlignmentType.RIGHT,
           bold: true,
           size: 19,
@@ -461,13 +528,13 @@ export function buildContractDocxDocument(
     tableRows.push(
       new TableRow({
         children: [
-          makeCell(getModeFreightLabel(order.shipping.mode), {
+          docCell(getModeFreightLabel(order.shipping.mode), {
             colSpan: 6,
             align: AlignmentType.RIGHT,
             bold: true,
             size: 19,
           }),
-          makeCell(formatDocMoney(freightTotal, order.currency), {
+          docCell(formatDocMoney(freightTotal, order.currency), {
             align: AlignmentType.RIGHT,
             bold: true,
             size: 19,
@@ -480,13 +547,13 @@ export function buildContractDocxDocument(
   tableRows.push(
     new TableRow({
       children: [
-        makeCell(`${order.shipping.incoterm} ${placeShort}`.trim(), {
+        docCell(`${order.shipping.incoterm} ${placeShort}`.trim(), {
           colSpan: 6,
           align: AlignmentType.RIGHT,
           bold: true,
           size: 19,
         }),
-        makeCell(formatDocMoney(summary.incotermTotal, order.currency), {
+        docCell(formatDocMoney(summary.incotermTotal, order.currency), {
           align: AlignmentType.RIGHT,
           bold: true,
           size: 19,
@@ -498,7 +565,7 @@ export function buildContractDocxDocument(
   tableRows.push(
     new TableRow({
       children: [
-        makeCell(`总 价 TOTAL VALUE : ${totalWords}`, {
+        docCell(`总 价 TOTAL VALUE : ${totalWords}`, {
           colSpan: 7,
           align: AlignmentType.LEFT,
           bold: true,
@@ -545,7 +612,7 @@ export function buildContractDocxDocument(
       new Paragraph({
         spacing: { before: 140, after: 40 },
         keepNext: true,
-        children: makeRuns(`${clause.number}.   ${titleLine}`, {
+        children: docRuns(`${clause.number}.   ${titleLine}`, {
           bold: true,
           size: 20,
         }),
@@ -556,8 +623,8 @@ export function buildContractDocxDocument(
       clauseParagraphs.push(
         new Paragraph({
           indent: { left: 420 },
-          spacing: { before: 20, after: 40, line: 280 },
-          children: makeRuns(bodyZh, { size: 19 }),
+          spacing: { before: 20, after: 40, line: docxClauseLine },
+          children: docRuns(bodyZh, { size: 19 }),
         }),
       );
     }
@@ -566,8 +633,8 @@ export function buildContractDocxDocument(
       clauseParagraphs.push(
         new Paragraph({
           indent: { left: 420 },
-          spacing: { before: 20, after: 80, line: 280 },
-          children: makeRuns(bodyEn.toUpperCase(), { size: 19 }),
+          spacing: { before: 20, after: 80, line: docxClauseLine },
+          children: docRuns(bodyEn.toUpperCase(), { size: 19 }),
         }),
       );
     }
@@ -608,15 +675,15 @@ export function buildContractDocxDocument(
   const sellerSignParagraphs: Paragraph[] = [
     new Paragraph({
       spacing: { before: 40, after: 40 },
-      children: makeRuns('卖方 : THE SELLER:', { size: 20 }),
+      children: docRuns('卖方 : THE SELLER:', { size: 20 }),
     }),
     new Paragraph({
       spacing: { before: 20, after: 40 },
-      children: makeRuns(sellerName.toUpperCase(), { bold: true, size: 20 }),
+      children: docRuns(sellerName.toUpperCase(), { bold: true, size: 20 }),
     }),
     new Paragraph({
       spacing: { before: 20, after: 120 },
-      children: makeRuns(`DATE : ${displayDate}`, { size: 20 }),
+      children: docRuns(`DATE : ${displayDate}`, { size: 20 }),
     }),
     new Paragraph({
       spacing: { before: 140, after: 40 },
@@ -637,20 +704,20 @@ export function buildContractDocxDocument(
             }),
           ]
         : sigMark
-          ? makeRuns(sigMark, {
+          ? docRuns(sigMark, {
               italics: true,
               size: 30,
               color: '475569',
             })
-          : makeRuns(' ', { size: 24 }),
+          : docRuns(' ', { size: 24 }),
     }),
     new Paragraph({
       spacing: { before: 40, after: 20 },
-      children: makeRuns(sellerSignatory, { size: 19 }),
+      children: docRuns(sellerSignatory, { size: 19 }),
     }),
     new Paragraph({
       spacing: { before: 10, after: 20 },
-      children: makeRuns(sellerSignatoryTitle, { size: 19 }),
+      children: docRuns(sellerSignatoryTitle, { size: 19 }),
     }),
   ];
 
@@ -685,7 +752,7 @@ export function buildContractDocxDocument(
             right: { style: BorderStyle.SINGLE, size: 6, color: 'B91C1C' },
           },
           alignment: AlignmentType.CENTER,
-          children: makeRuns(`[AUTHORIZED SEAL / 公章] ${stampLabel}`, {
+          children: docRuns(`[AUTHORIZED SEAL / 公章] ${stampLabel}`, {
             bold: true,
             size: 18,
             color: 'B91C1C',
@@ -709,18 +776,18 @@ export function buildContractDocxDocument(
             children: [
               new Paragraph({
                 spacing: { before: 40, after: 40 },
-                children: makeRuns('买方 : THE BUYER:', { size: 20 }),
+                children: docRuns('买方 : THE BUYER:', { size: 20 }),
               }),
               new Paragraph({
                 spacing: { before: 20, after: 40 },
-                children: makeRuns(buyerName.toUpperCase(), {
+                children: docRuns(buyerName.toUpperCase(), {
                   bold: true,
                   size: 20,
                 }),
               }),
               new Paragraph({
                 spacing: { before: 20, after: 120 },
-                children: makeRuns('DATE :', { size: 20 }),
+                children: docRuns('DATE :', { size: 20 }),
               }),
               new Paragraph({
                 spacing: { before: 140, after: 40 },
@@ -731,15 +798,15 @@ export function buildContractDocxDocument(
                     color: '000000',
                   },
                 },
-                children: makeRuns(' ', { size: 30 }),
+                children: docRuns(' ', { size: 30 }),
               }),
               new Paragraph({
                 spacing: { before: 40, after: 20 },
-                children: makeRuns(buyerSignatory, { size: 19 }),
+                children: docRuns(buyerSignatory, { size: 19 }),
               }),
               new Paragraph({
                 spacing: { before: 10, after: 20 },
-                children: makeRuns(buyerSignatoryTitle, { size: 19 }),
+                children: docRuns(buyerSignatoryTitle, { size: 19 }),
               }),
             ],
           }),
@@ -780,11 +847,11 @@ export function buildContractDocxDocument(
             new TextRun({
               text: 'Disclaimer : ',
               bold: true,
-              size: 18,
+              size: hp(18),
               color: '334155',
-              font: FONT_CONFIG,
+              font: docxFont,
             }),
-            ...makeRuns(resolvedDisclaimer, {
+            ...docRuns(resolvedDisclaimer, {
               italics: true,
               size: 18,
               color: '334155',
@@ -802,11 +869,11 @@ export function buildContractDocxDocument(
           new TextRun({
             text: 'Note : ',
             bold: true,
-            size: 18,
+            size: hp(18),
             color: '334155',
-            font: FONT_CONFIG,
+            font: docxFont,
           }),
-          ...makeRuns(special.customNote.trim(), {
+          ...docRuns(special.customNote.trim(), {
             size: 18,
             color: '334155',
           }),
@@ -820,8 +887,9 @@ export function buildContractDocxDocument(
       default: {
         document: {
           run: {
-            font: FONT_CONFIG,
-            size: 20,
+            font: docxFont,
+            size: hp(20),
+            bold: bodyBold,
             color: '000000',
           },
         },
@@ -848,7 +916,7 @@ export function buildContractDocxDocument(
                   },
                 },
                 spacing: { after: 80 },
-                children: makeRuns(`CONTRACT No. ${contractNo}`, {
+                children: docRuns(`CONTRACT No. ${contractNo}`, {
                   bold: true,
                   size: 18,
                 }),
@@ -864,8 +932,8 @@ export function buildContractDocxDocument(
                 children: [
                   new TextRun({
                     children: [PageNumber.CURRENT, '/', PageNumber.TOTAL_PAGES],
-                    size: 18,
-                    font: FONT_CONFIG,
+                    size: hp(18),
+                    font: docxFont,
                   }),
                 ],
               }),
@@ -876,39 +944,47 @@ export function buildContractDocxDocument(
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { before: 120, after: 40 },
-            children: makeRuns('合   同', { bold: true, size: 36 }),
+            children: makeRuns('合   同', {
+              bold: true,
+              size: hp(36, titleScale),
+              font: docxFont,
+            }),
           }),
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { before: 0, after: 140 },
-            children: makeRuns('C O N T R A C T', { bold: true, size: 34 }),
+            children: makeRuns('C O N T R A C T', {
+              bold: true,
+              size: hp(34, titleScale),
+              font: docxFont,
+            }),
           }),
           new Paragraph({
             alignment: AlignmentType.RIGHT,
             spacing: { before: 20, after: 20 },
-            children: makeRuns(`编 号 NO. : ${contractNo}`, { size: 20 }),
+            children: docRuns(`编 号 NO. : ${contractNo}`, { size: 20 }),
           }),
           new Paragraph({
             alignment: AlignmentType.RIGHT,
             spacing: { before: 0, after: 160 },
-            children: makeRuns(`日 期 DATE : ${displayDate}`, { size: 20 }),
+            children: docRuns(`日 期 DATE : ${displayDate}`, { size: 20 }),
           }),
 
           // Buyers
           new Paragraph({
             spacing: { before: 40, after: 30 },
             children: [
-              ...makeRuns('买 方 THE BUYERS : ', { size: 20 }),
-              ...makeRuns(buyerName, { bold: true, size: 20 }),
+              ...docRuns('买 方 THE BUYERS : ', { size: 20 }),
+              ...docRuns(buyerName, { bold: true, size: 20 }),
             ],
           }),
           new Paragraph({
             spacing: { before: 20, after: 30 },
-            children: makeRuns(`地 址 ADDRESS : ${buyerAddress}`, { size: 20 }),
+            children: docRuns(`地 址 ADDRESS : ${buyerAddress}`, { size: 20 }),
           }),
           new Paragraph({
             spacing: { before: 20, after: 120 },
-            children: makeRuns(
+            children: docRuns(
               `电 话 TELEPHONE : ${buyerPhone}        传 真 FAX : ${buyerFax}`,
               { size: 20 },
             ),
@@ -918,19 +994,19 @@ export function buildContractDocxDocument(
           new Paragraph({
             spacing: { before: 40, after: 30 },
             children: [
-              ...makeRuns('卖 方 THE SELLERS : ', { size: 20 }),
-              ...makeRuns(sellerName, { bold: true, size: 20 }),
+              ...docRuns('卖 方 THE SELLERS : ', { size: 20 }),
+              ...docRuns(sellerName, { bold: true, size: 20 }),
             ],
           }),
           new Paragraph({
             spacing: { before: 20, after: 30 },
-            children: makeRuns(`地 址 ADDRESS : ${sellerAddress}`, {
+            children: docRuns(`地 址 ADDRESS : ${sellerAddress}`, {
               size: 20,
             }),
           }),
           new Paragraph({
             spacing: { before: 20, after: 140 },
-            children: makeRuns(
+            children: docRuns(
               `电 话 TELEPHONE : ${sellerPhone}        传 真 FAX : ${sellerFax}`,
               { size: 20 },
             ),
@@ -938,12 +1014,12 @@ export function buildContractDocxDocument(
 
           // Preamble
           new Paragraph({
-            spacing: { before: 40, after: 30, line: 260 },
-            children: makeRuns(preambleZh, { size: 20 }),
+            spacing: { before: 40, after: 30, line: docxLine },
+            children: docRuns(preambleZh, { size: 20 }),
           }),
           new Paragraph({
-            spacing: { before: 0, after: 160, line: 260 },
-            children: makeRuns(preambleEn.toUpperCase(), { size: 19 }),
+            spacing: { before: 0, after: 160, line: docxLine },
+            children: docRuns(preambleEn.toUpperCase(), { size: 19 }),
           }),
 
           // Commodity & Pricing Table

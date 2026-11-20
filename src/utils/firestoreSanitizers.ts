@@ -9,6 +9,7 @@ import type {
   CustomerProductPrice,
   DocLanguage,
   DocSpecialFields,
+  DocStyleSettings,
   DocTemplateFileType,
   DocTemplateScope,
   ExportOrder,
@@ -26,6 +27,7 @@ import type {
 } from '../types/erp';
 import { resolveEffectiveExchangeRate } from './exportCalculations';
 import { createDefaultContractSettings } from './contractDefaults';
+import { resolveDocStyle } from './docStyleUtils';
 
 export const BLUEPRINT_LIMITS = {
   ID_MAX: 128,
@@ -276,15 +278,28 @@ export function sanitizeDocSpecialFields(
       showDisclaimer: false,
       disclaimerText: '',
       customNote: '',
+      docStyle: resolveDocStyle(),
+      hiddenSections: [],
     };
   }
   const raw = fields as Record<string, unknown>;
+  const hiddenSections = Array.isArray(raw.hiddenSections)
+    ? Array.from(
+        new Set(
+          raw.hiddenSections
+            .map((s) => clampStr(s, BLUEPRINT_LIMITS.SHORT_MAX).trim())
+            .filter(Boolean),
+        ),
+      ).slice(0, 20)
+    : [];
   return {
     showCompanyStamp: Boolean(raw.showCompanyStamp),
     showSignature: raw.showSignature === undefined ? true : Boolean(raw.showSignature),
     showDisclaimer: Boolean(raw.showDisclaimer),
     disclaimerText: clampStr(raw.disclaimerText, BLUEPRINT_LIMITS.LONG_MAX),
     customNote: clampStr(raw.customNote, BLUEPRINT_LIMITS.LONG_MAX),
+    docStyle: resolveDocStyle(raw.docStyle as DocStyleSettings | undefined),
+    hiddenSections,
   };
 }
 
@@ -503,6 +518,7 @@ export function sanitizePackingRow(row: PackingListRow, idx: number): PackingLis
     ctnNo: clampStr(row.ctnNo, BLUEPRINT_LIMITS.SHORT_MAX),
     itemNo: Math.max(1, nonNegNum(row.itemNo, 1)),
     type: clampStr(row.type, BLUEPRINT_LIMITS.SHORT_MAX),
+    partName: clampStr(row.partName, BLUEPRINT_LIMITS.LONG_MAX),
     size: clampStr(row.size, BLUEPRINT_LIMITS.SHORT_MAX),
     material: clampStr(row.material, BLUEPRINT_LIMITS.SHORT_MAX),
     surfaceFinish: clampStr(row.surfaceFinish, BLUEPRINT_LIMITS.SHORT_MAX),

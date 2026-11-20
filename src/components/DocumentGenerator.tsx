@@ -12,16 +12,26 @@ import {
   RotateCcw,
   ChevronDown,
   Upload,
+  Type,
+  Plus,
+  Minus,
+  Trash2,
+  X,
 } from 'lucide-react';
 import type {
   BankAccount,
   ContractSettings,
   Customer,
+  DocCellDensity,
+  DocFontFamilyId,
   DocLanguage,
   DocSpecialFields,
+  DocStyleSettings,
   DocumentTab,
   ExportOrder,
   LogisticsProvider,
+  OrderItem,
+  PackingListRow,
   Product,
   Supplier,
   TransportMode,
@@ -29,7 +39,10 @@ import type {
 import type { UiDictionary } from '../i18n/uiTranslations';
 import { DOC_TEXT, type DocDictionary } from '../i18n/docTranslations';
 import {
+  calculateItemCartons,
   calculateOrderSummary,
+  calculatePalletPacking,
+  cleanFloat,
   formatNumberNoRound,
   resolveEffectiveExchangeRate,
 } from '../utils/exportCalculations';
@@ -48,12 +61,22 @@ import {
   interpolateContractText,
   numberToContractWords,
 } from '../utils/contractDefaults';
-import { exportDocumentToExcel } from '../utils/importExportUtils';
+import {
+  convertPriceToJpy,
+  exportDocumentToExcel,
+  resolveCustomerProductPricing,
+} from '../utils/importExportUtils';
 import { exportContractToDocx } from '../utils/contractDocxExport';
 import {
   exportWithCustomerTemplate,
   findMatchingCustomerTemplate,
 } from '../utils/templateExportUtils';
+import {
+  DEFAULT_DOC_STYLE,
+  DOC_FONT_CSS_MAP,
+  buildDocSheetCssVars,
+  resolveDocStyle,
+} from '../utils/docStyleUtils';
 
 import { compressImageFileToDataUrl } from '../utils/imageUploadUtils';
 
@@ -132,11 +155,25 @@ const EditableText: React.FC<{
   order: ExportOrder;
   fieldKey: string;
   fallback: string;
+  directValue?: string;
   onCommit?: (fieldKey: string, nextValue: string) => void;
+  onDirectCommit?: (nextValue: string) => void;
   className?: string;
   multiline?: boolean;
-}> = ({ order, fieldKey, fallback, onCommit, className = '', multiline }) => {
-  const current = getOverride(order, fieldKey, fallback);
+}> = ({
+  order,
+  fieldKey,
+  fallback,
+  directValue,
+  onCommit,
+  onDirectCommit,
+  className = '',
+  multiline,
+}) => {
+  const current =
+    directValue !== undefined
+      ? directValue
+      : getOverride(order, fieldKey, fallback);
   const spanRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
@@ -153,7 +190,7 @@ const EditableText: React.FC<{
     }
   }, [current, multiline]);
 
-  if (!onCommit) {
+  if (!onDirectCommit && !onCommit) {
     return <span className={className}>{current}</span>;
   }
   return (
@@ -162,11 +199,21 @@ const EditableText: React.FC<{
       contentEditable
       suppressContentEditableWarning
       data-editable-key={fieldKey}
+      onKeyDown={(e) => {
+        if (!multiline && e.key === 'Enter') {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
       onBlur={(e) => {
         const raw = e.currentTarget.innerText ?? e.currentTarget.textContent ?? '';
         const cleaned = multiline ? raw.replace(/\r/g, '').trimEnd() : raw.trim();
         if (cleaned !== current) {
-          onCommit(fieldKey, cleaned);
+          if (onDirectCommit) {
+            onDirectCommit(cleaned);
+          } else if (onCommit) {
+            onCommit(fieldKey, cleaned);
+          }
         }
       }}
       className={`editable-doc-field ${multiline ? 'whitespace-pre-line inline-block' : 'inline-block'} ${className}`}
@@ -279,6 +326,7 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
 }) => {
   const [activeDoc, setActiveDoc] = useState<DocumentTab>(initialDocTab);
   const [specialMenuOpen, setSpecialMenuOpen] = useState(false);
+  const [typographyMenuOpen, setTypographyMenuOpen] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const d = DOC_TEXT[docLang];
   const settings = contractSettings ?? createDefaultContractSettings();
@@ -353,6 +401,14 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
     activeDoc === 'casemark' ? 'all' : activeDoc,
   );
   const overrideCount = Object.keys(order.docOverrides ?? {}).length;
+  const special = order.docSpecialFields ?? {};
+  const docStyle = resolveDocStyle(special.docStyle);
+  const docSheetCssStyle = buildDocSheetCssVars(docStyle) as React.CSSProperties;
+  const hiddenSections = special.hiddenSections ?? [];
+  const effectiveExchangeRate = resolveEffectiveExchangeRate(
+    order.currency,
+    order.exchangeRate,
+  );
 
   const handleCommitOverride = onChangeOrder
     ? (fieldKey: string, nextValue: string) => {
@@ -379,6 +435,305 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
       updatedAt: new Date().toISOString(),
     });
   };
+
+  const handleUpdateDocStyle = (patch: Partial<DocStyleSettings>) => {
+    const nextStyle = resolveDocStyle({
+      ...docStyle,
+      ...patch,
+    });
+    handleUpdateSpecialFields({ docStyle: nextStyle });
+  };
+
+  const handleResetDocStyle = () => {
+    handleUpdateSpecialFields({ docStyle: { ...DEFAULT_DOC_STYLE } });
+  };
+
+  const handleHideSection = onChangeOrder
+    ? (sectionKey: string) => {
+        if (hiddenSections.includes(sectionKey)) return;
+        handleUpdateSpecialFields({
+          hiddenSections: [...hiddenSections, sectionKey],
+        });
+      }
+    : undefined;
+
+  const handleRestoreHiddenSections = () => {
+    handleUpdateSpecialFields({ hiddenSections: [] });
+  };
+
+  const syncOrderItemsAndPallets = (nextItems: OrderItem[], syncPallets: boolean) => {
+    if (!onChangeOrder) return;
+    if (!syncPallets) {
+      onChangeOrder({
+        ...order,
+        items: nextItems,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    const nextSummary = calculateOrderSummary(
+      nextItems,
+      order.costs ?? DEFAULT_EMPTY_COSTS,
+      order.shipping.incoterm,
+      order.currency,
+      order.palletCount ?? 0,
+    );
+    const layerSize = Math.max(1, Number(order.cartonsPerLayer ?? 12) || 12);
+    const pack = calculatePalletPacking(nextSummary.totalCartons, {
+      cartonsPerLayer: layerSize,
+    });
+    onChangeOrder({
+      ...order,
+      items: nextItems,
+      palletCount: pack.palletCount,
+      emptyCartons: pack.emptyCartons,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleUpdateOrderItem = onChangeOrder
+    ? (
+        itemId: string,
+        patch: Partial<OrderItem>,
+        customPartOverride?: string,
+      ) => {
+        const nextItems = order.items.map((item) => {
+          if (item.id !== itemId) return item;
+          const prod = products.find((p) => p.id === item.productId);
+          const merged: OrderItem = { ...item, ...patch };
+          if (typeof patch.quantity === 'number') {
+            const spc =
+              merged.setsPerCarton || prod?.defaultUnitsPerCarton || 100;
+            merged.cartons = calculateItemCartons(merged.quantity, spc);
+          }
+          if (typeof patch.unitPrice === 'number') {
+            merged.baseUnitPriceJpy = convertPriceToJpy(
+              patch.unitPrice,
+              order.currency,
+              effectiveExchangeRate,
+            );
+          }
+          return merged;
+        });
+        if (customPartOverride !== undefined) {
+          onChangeOrder({
+            ...order,
+            items: nextItems,
+            docOverrides: {
+              ...(order.docOverrides ?? {}),
+              [`inv.part.${itemId}`]: customPartOverride,
+            },
+            updatedAt: new Date().toISOString(),
+          });
+          return;
+        }
+        syncOrderItemsAndPallets(nextItems, typeof patch.quantity === 'number');
+      }
+    : undefined;
+
+  const handleDeleteOrderItem = onChangeOrder
+    ? (itemId: string) => {
+        const nextItems = order.items.filter((i) => i.id !== itemId);
+        syncOrderItemsAndPallets(nextItems, true);
+      }
+    : undefined;
+
+  const handleAddOrderItemFromProduct = onChangeOrder
+    ? (productId: string) => {
+        const prod = products.find((p) => p.id === productId);
+        if (!prod) return;
+        const defaultQty = prod.defaultUnitsPerCarton || 100;
+        const resolved = resolveCustomerProductPricing(
+          customer,
+          prod,
+          defaultQty,
+          order.currency,
+          effectiveExchangeRate,
+        );
+        const itemCartons = Math.max(
+          1,
+          calculateItemCartons(defaultQty, prod.defaultUnitsPerCarton || 100),
+        );
+        const newItem: OrderItem = {
+          id: `oi-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          productId: prod.id,
+          sku: prod.sku,
+          description: resolved.customDescription || prod.nameEn,
+          size: prod.size ?? '',
+          material: prod.material ?? '',
+          surfaceFinish: prod.surfaceFinish ?? '',
+          hsCode: prod.hsCode,
+          quantity: defaultQty,
+          unit: prod.unit,
+          unitPrice: resolved.unitPrice,
+          baseUnitPriceJpy: resolved.basePriceJpy,
+          cartons: itemCartons,
+          unitNetWeightKg: prod.unitNetWeightKg,
+          unitGrossWeightKg: prod.unitGrossWeightKg,
+          cartonLengthCm: prod.cartonLengthCm,
+          cartonWidthCm: prod.cartonWidthCm,
+          cartonHeightCm: prod.cartonHeightCm,
+          originCountry: prod.originCountry,
+          palletNo: '',
+          cartonRange: '',
+          setsPerCarton: defaultQty,
+        };
+        syncOrderItemsAndPallets([...order.items, newItem], true);
+      }
+    : undefined;
+
+  const handleAddBlankOrderItem = onChangeOrder
+    ? () => {
+        const defaultUnitPrice = order.currency === 'JPY' ? 150 : 1;
+        const newItem: OrderItem = {
+          id: `oi-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          productId: '',
+          sku: 'NEW-ITEM',
+          description: 'HARDLOCK NUT',
+          size: '',
+          material: '',
+          surfaceFinish: '',
+          hsCode: '7318.16.00',
+          quantity: 100,
+          unit: 'SETS',
+          unitPrice: defaultUnitPrice,
+          baseUnitPriceJpy: convertPriceToJpy(
+            defaultUnitPrice,
+            order.currency,
+            effectiveExchangeRate,
+          ),
+          cartons: 1,
+          unitNetWeightKg: 0.05,
+          unitGrossWeightKg: 0.055,
+          cartonLengthCm: 33,
+          cartonWidthCm: 25,
+          cartonHeightCm: 12,
+          originCountry: 'JAPAN',
+          palletNo: '',
+          cartonRange: '',
+          setsPerCarton: 100,
+        };
+        syncOrderItemsAndPallets([...order.items, newItem], true);
+      }
+    : undefined;
+
+  const materializePackingRows = (): PackingListRow[] => {
+    if (order.packingRows && order.packingRows.length > 0) {
+      return order.packingRows.map((r) => ({ ...r }));
+    }
+    return buildPackingListDisplayRows(order.items, products, undefined, {
+      customer,
+    }).map(
+      (r): PackingListRow => ({
+        id: r.id,
+        palletNo: r.palletNo,
+        ctnNo: r.ctnNo,
+        itemNo: r.itemNo,
+        type: r.type,
+        partName: r.partName,
+        size: r.size,
+        material: r.material,
+        surfaceFinish: r.surfaceFinish,
+        setsPerCarton: r.setsPerCarton,
+        cartonCount: r.cartonCount,
+        sharedCarton: r.sharedCarton ?? false,
+        qty: r.qty,
+        unitWeightKg: r.unitWeightKg,
+        totalWeightKg: r.totalWeightKg,
+      }),
+    );
+  };
+
+  const handleUpdatePackingRow = onChangeOrder
+    ? (rowId: string, patch: Partial<PackingListRow>) => {
+        const base = materializePackingRows();
+        const nextRows = base.map((r) => {
+          if (r.id !== rowId) return r;
+          const merged: PackingListRow = { ...r, ...patch };
+          if (
+            (typeof patch.setsPerCarton === 'number' ||
+              typeof patch.cartonCount === 'number') &&
+            typeof patch.qty !== 'number'
+          ) {
+            merged.qty = cleanFloat(
+              (merged.setsPerCarton || 0) * (merged.cartonCount || 0),
+            );
+          }
+          if (
+            (typeof patch.qty === 'number' ||
+              typeof patch.unitWeightKg === 'number' ||
+              typeof patch.setsPerCarton === 'number' ||
+              typeof patch.cartonCount === 'number') &&
+            typeof patch.totalWeightKg !== 'number'
+          ) {
+            merged.totalWeightKg = cleanFloat(
+              (merged.qty || 0) * (merged.unitWeightKg || 0),
+            );
+          }
+          return merged;
+        });
+        onChangeOrder({
+          ...order,
+          packingRows: nextRows,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    : undefined;
+
+  const handleAddPackingRow = onChangeOrder
+    ? () => {
+        const base = materializePackingRows();
+        const last = base[base.length - 1];
+        const firstItem = order.items[0];
+        const newRow: PackingListRow = {
+          id: `pk-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          palletNo: last?.palletNo || '1',
+          ctnNo: last?.ctnNo || '1',
+          itemNo: base.length + 1,
+          type: firstItem?.sku || 'NEW-ITEM',
+          partName: firstItem?.description || 'HARDLOCK NUT',
+          size: firstItem?.size || '',
+          material: firstItem?.material || '',
+          surfaceFinish: firstItem?.surfaceFinish || '',
+          setsPerCarton: firstItem?.setsPerCarton || 100,
+          cartonCount: 1,
+          sharedCarton: false,
+          qty: firstItem?.setsPerCarton || 100,
+          unitWeightKg: firstItem?.unitNetWeightKg || 0.05,
+          totalWeightKg: cleanFloat(
+            (firstItem?.setsPerCarton || 100) *
+              (firstItem?.unitNetWeightKg || 0.05),
+          ),
+        };
+        onChangeOrder({
+          ...order,
+          packingRows: [...base, newRow],
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    : undefined;
+
+  const handleDeletePackingRow = onChangeOrder
+    ? (rowId: string) => {
+        const base = materializePackingRows();
+        const nextRows = base.filter((r) => r.id !== rowId);
+        onChangeOrder({
+          ...order,
+          packingRows: nextRows,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    : undefined;
+
+  const handleResetPackingAuto = onChangeOrder
+    ? () => {
+        onChangeOrder({
+          ...order,
+          packingRows: [],
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    : undefined;
 
   const handleUploadSealOrSig = async (
     target: 'companyStampImage' | 'signatureImage',
@@ -431,6 +786,25 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
   const handleDownloadHtml = () => {
     const el = document.getElementById('hardlock-print-area');
     if (!el) return;
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('.no-print').forEach((n) => n.remove());
+    const companyPx = Number(
+      (22 * (docStyle.titleFontSizePx / DEFAULT_DOC_STYLE.titleFontSizePx)).toFixed(2),
+    );
+    const smallPx = Number(Math.max(7.5, docStyle.tableFontSizePx - 1.5).toFixed(2));
+    const padX =
+      docStyle.cellDensity === 'compact'
+        ? '3px'
+        : docStyle.cellDensity === 'relaxed'
+          ? '10px'
+          : '6px';
+    const padY =
+      docStyle.cellDensity === 'compact'
+        ? '1px'
+        : docStyle.cellDensity === 'relaxed'
+          ? '6px'
+          : '3px';
+    const fontFamilyCss = DOC_FONT_CSS_MAP[docStyle.fontFamily];
     const html = `<!doctype html>
 <html lang="${docLang}">
 <head>
@@ -438,14 +812,20 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
 <title>${order.invoiceNo} - HARDLOCK Export Documents</title>
 <style>
   @page { size: A4 portrait; margin: 10mm 12mm; }
-  body { font-family: "Times New Roman", Times, Georgia, "Noto Serif JP", "Noto Serif SC", serif; color: #000000; margin: 16px; background: #ffffff; }
-  .hardlock-doc-sheet { font-family: "Times New Roman", Times, Georgia, "Noto Serif JP", "Noto Serif SC", serif; color: #000000; }
+  body { font-family: ${fontFamilyCss}; font-size: ${docStyle.baseFontSizePx}px; line-height: ${docStyle.lineHeight}; font-weight: ${docStyle.boldBody ? 600 : 400}; color: #000000; margin: 16px; background: #ffffff; }
+  .hardlock-doc-sheet { font-family: ${fontFamilyCss}; font-size: ${docStyle.baseFontSizePx}px; line-height: ${docStyle.lineHeight}; font-weight: ${docStyle.boldBody ? 600 : 400}; color: #000000; }
+  .hardlock-doc-sheet .doc-company-title { font-size: ${companyPx}px; }
+  .hardlock-doc-sheet .doc-title { font-size: ${docStyle.titleFontSizePx}px; }
+  .hardlock-doc-sheet .doc-table { font-size: ${docStyle.tableFontSizePx}px; }
+  .hardlock-doc-sheet .doc-table th, .hardlock-doc-sheet .doc-table td { padding: ${padY} ${padX}; }
+  .hardlock-doc-sheet .doc-small-sub { font-size: ${smallPx}px; }
+  .no-print { display: none !important; }
   .editable-doc-field { border: none !important; background: transparent !important; }
   table { width: 100%; border-collapse: collapse; }
   .print-page-break { page-break-after: always; margin-top: 32px; border-top: 2px dashed #cbd5e1; padding-top: 24px; }
 </style>
 </head>
-<body>${el.innerHTML}</body>
+<body>${clone.innerHTML}</body>
 </html>`;
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -472,7 +852,19 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
     { code: 'zh', label: '中文' },
   ];
 
-  const special = order.docSpecialFields ?? {};
+  const fontOptions: { id: DocFontFamilyId; label: string }[] = [
+    { id: 'serif', label: t.fontOptionSerif },
+    { id: 'sans', label: t.fontOptionSans },
+    { id: 'songti', label: t.fontOptionSongti },
+    { id: 'arial', label: t.fontOptionArial },
+    { id: 'mono', label: t.fontOptionMono },
+  ];
+
+  const densityOptions: { id: DocCellDensity; label: string }[] = [
+    { id: 'compact', label: t.densityCompact },
+    { id: 'normal', label: t.densityNormal },
+    { id: 'relaxed', label: t.densityRelaxed },
+  ];
 
   return (
     <div id="hardlock-print-root" className="space-y-5">
@@ -525,6 +917,87 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
               </div>
             </div>
 
+            {onChangeOrder && (
+              <div className="flex items-center gap-1.5 border border-slate-200 rounded-md px-2 py-1 bg-slate-50">
+                <select
+                  aria-label={t.fontFamilyLabel}
+                  data-testid="quick-font-family-select"
+                  value={docStyle.fontFamily}
+                  onChange={(e) =>
+                    handleUpdateDocStyle({
+                      fontFamily: e.target.value as DocFontFamilyId,
+                    })
+                  }
+                  className="text-xs bg-transparent font-medium text-slate-800 focus:outline-none max-w-[195px]"
+                >
+                  {fontOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-slate-300">|</span>
+                <button
+                  type="button"
+                  data-testid="quick-font-size-dec"
+                  aria-label={`${t.baseFontSizeLabel} -`}
+                  onClick={() =>
+                    handleUpdateDocStyle({
+                      baseFontSizePx: cleanFloat(
+                        Math.max(7, docStyle.baseFontSizePx - 0.5),
+                      ),
+                      tableFontSizePx: cleanFloat(
+                        Math.max(7, docStyle.tableFontSizePx - 0.5),
+                      ),
+                    })
+                  }
+                  className="p-0.5 rounded hover:bg-slate-200 text-slate-700"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <span
+                  data-testid="quick-font-size-value"
+                  className="text-[11px] font-mono-tabular text-slate-700 min-w-[34px] text-center"
+                >
+                  {docStyle.baseFontSizePx}px
+                </span>
+                <button
+                  type="button"
+                  data-testid="quick-font-size-inc"
+                  aria-label={`${t.baseFontSizeLabel} +`}
+                  onClick={() =>
+                    handleUpdateDocStyle({
+                      baseFontSizePx: cleanFloat(
+                        Math.min(24, docStyle.baseFontSizePx + 0.5),
+                      ),
+                      tableFontSizePx: cleanFloat(
+                        Math.min(22, docStyle.tableFontSizePx + 0.5),
+                      ),
+                    })
+                  }
+                  className="p-0.5 rounded hover:bg-slate-200 text-slate-700"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            <button
+              type="button"
+              data-testid="toggle-typography-panel-btn"
+              onClick={() => setTypographyMenuOpen((v) => !v)}
+              aria-expanded={typographyMenuOpen}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-md border transition-colors whitespace-nowrap ${
+                typographyMenuOpen
+                  ? 'text-blue-800 bg-blue-50 border-blue-300 hover:bg-blue-100'
+                  : 'text-slate-700 bg-white border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <Type className="w-3.5 h-3.5" />
+              <span>{t.btnTypographyPanel}</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+
             <button
               type="button"
               onClick={() => setSpecialMenuOpen((v) => !v)}
@@ -542,6 +1015,20 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
               <span>{t.btnInsertSpecialField}</span>
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
+
+            {hiddenSections.length > 0 && onChangeOrder && (
+              <button
+                type="button"
+                data-testid="restore-hidden-sections-btn"
+                onClick={handleRestoreHiddenSections}
+                className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-300 rounded-md hover:bg-amber-100 transition-colors whitespace-nowrap"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>
+                  {t.docRestoreSectionsLabel} ({hiddenSections.length})
+                </span>
+              </button>
+            )}
 
             {overrideCount > 0 && onChangeOrder && (
               <button
@@ -642,6 +1129,175 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Typography & Font Settings Drawer */}
+        {typographyMenuOpen && (
+          <div
+            data-testid="typography-panel"
+            className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-md space-y-3 text-xs"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                  {t.fontFamilyLabel}
+                </label>
+                <select
+                  data-testid="doc-font-family-select"
+                  value={docStyle.fontFamily}
+                  onChange={(e) =>
+                    handleUpdateDocStyle({
+                      fontFamily: e.target.value as DocFontFamilyId,
+                    })
+                  }
+                  className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded"
+                >
+                  {fontOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                  {t.baseFontSizeLabel} (px)
+                </label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    step="any"
+                    min={7}
+                    max={24}
+                    data-testid="doc-base-size-input"
+                    value={docStyle.baseFontSizePx}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (Number.isFinite(val) && val > 0) {
+                        handleUpdateDocStyle({ baseFontSizePx: val });
+                      }
+                    }}
+                    className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded font-mono-tabular"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                  {t.tableFontSizeLabel} (px)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min={7}
+                  max={22}
+                  data-testid="doc-table-size-input"
+                  value={docStyle.tableFontSizePx}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (Number.isFinite(val) && val > 0) {
+                      handleUpdateDocStyle({ tableFontSizePx: val });
+                    }
+                  }}
+                  className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded font-mono-tabular"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                  {t.titleFontSizeLabel} (px)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min={12}
+                  max={36}
+                  data-testid="doc-title-size-input"
+                  value={docStyle.titleFontSizePx}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (Number.isFinite(val) && val > 0) {
+                      handleUpdateDocStyle({ titleFontSizePx: val });
+                    }
+                  }}
+                  className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded font-mono-tabular"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">
+                  {t.lineHeightLabel}
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min={1}
+                  max={2.2}
+                  data-testid="doc-line-height-input"
+                  value={docStyle.lineHeight}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (Number.isFinite(val) && val > 0) {
+                      handleUpdateDocStyle({ lineHeight: val });
+                    }
+                  }}
+                  className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded font-mono-tabular"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-blue-200/70">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-medium text-slate-700">
+                    {t.cellDensityLabel}:
+                  </span>
+                  <div className="inline-flex rounded border border-slate-300 bg-white overflow-hidden">
+                    {densityOptions.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        data-testid={`doc-density-${opt.id}`}
+                        onClick={() =>
+                          handleUpdateDocStyle({ cellDensity: opt.id })
+                        }
+                        className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          docStyle.cellDensity === opt.id
+                            ? 'bg-blue-700 text-white'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="doc-bold-body-checkbox"
+                    checked={Boolean(docStyle.boldBody)}
+                    onChange={(e) =>
+                      handleUpdateDocStyle({ boldBody: e.target.checked })
+                    }
+                  />
+                  <span>{t.boldBodyLabel}</span>
+                </label>
+              </div>
+
+              <button
+                type="button"
+                data-testid="reset-typography-btn"
+                onClick={handleResetDocStyle}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>{t.btnResetTypography}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Special Field Insertion Drawer */}
         {specialMenuOpen && (
@@ -809,6 +1465,7 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
         {(activeDoc === 'invoice' || activeDoc === 'all') && (
           <div
             data-testid="sheet-invoice"
+            style={docSheetCssStyle}
             className={`hardlock-doc-sheet bg-white border border-slate-300 shadow-xs mx-auto max-w-[920px] px-7 py-6 md:px-9 md:py-7 text-black print:border-0 print:shadow-none print:p-0 ${
               activeDoc === 'all' ? 'print-page-break' : ''
             }`}
@@ -825,8 +1482,15 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
               caseRanges={caseRanges}
               docLang={docLang}
               d={d}
+              t={t}
               settings={settings}
+              hiddenSections={hiddenSections}
               onCommitOverride={handleCommitOverride}
+              onUpdateItem={handleUpdateOrderItem}
+              onDeleteItem={handleDeleteOrderItem}
+              onAddBlankItem={handleAddBlankOrderItem}
+              onAddItemFromProduct={handleAddOrderItemFromProduct}
+              onHideSection={handleHideSection}
             />
           </div>
         )}
@@ -834,6 +1498,7 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
         {(activeDoc === 'packing' || activeDoc === 'all') && (
           <div
             data-testid="sheet-packing-list"
+            style={docSheetCssStyle}
             className={`hardlock-doc-sheet bg-white border border-slate-300 shadow-xs mx-auto max-w-[920px] px-7 py-6 md:px-9 md:py-7 text-black print:border-0 print:shadow-none print:p-0 ${
               activeDoc === 'all' ? 'print-page-break' : ''
             }`}
@@ -849,8 +1514,15 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
               caseRanges={caseRanges}
               docLang={docLang}
               d={d}
+              t={t}
               settings={settings}
+              hiddenSections={hiddenSections}
               onCommitOverride={handleCommitOverride}
+              onUpdatePackingRow={handleUpdatePackingRow}
+              onAddPackingRow={handleAddPackingRow}
+              onDeletePackingRow={handleDeletePackingRow}
+              onResetPackingAuto={handleResetPackingAuto}
+              onHideSection={handleHideSection}
             />
           </div>
         )}
@@ -858,6 +1530,7 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
         {(activeDoc === 'contract' || activeDoc === 'all') && (
           <div
             data-testid="sheet-contract"
+            style={docSheetCssStyle}
             className={`hardlock-doc-sheet bg-white border border-slate-300 shadow-xs mx-auto max-w-[920px] px-7 py-6 md:px-9 md:py-7 text-black print:border-0 print:shadow-none print:p-0 ${
               activeDoc === 'all' ? 'print-page-break' : ''
             }`}
@@ -873,8 +1546,15 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
               caseRanges={caseRanges}
               docLang={docLang}
               d={d}
+              t={t}
               settings={settings}
+              hiddenSections={hiddenSections}
               onCommitOverride={handleCommitOverride}
+              onUpdateItem={handleUpdateOrderItem}
+              onDeleteItem={handleDeleteOrderItem}
+              onAddBlankItem={handleAddBlankOrderItem}
+              onAddItemFromProduct={handleAddOrderItemFromProduct}
+              onHideSection={handleHideSection}
             />
           </div>
         )}
@@ -882,7 +1562,8 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
         {(activeDoc === 'casemark' || activeDoc === 'all') && (
           <div
             data-testid="sheet-case-mark"
-            className="bg-white border border-slate-300 shadow-xs mx-auto max-w-[920px] p-8 md:p-10 text-slate-900 print:border-0 print:shadow-none print:p-0"
+            style={docSheetCssStyle}
+            className="hardlock-doc-sheet bg-white border border-slate-300 shadow-xs mx-auto max-w-[920px] p-8 md:p-10 text-slate-900 print:border-0 print:shadow-none print:p-0"
           >
             <CaseMarkSheet
               order={order}
@@ -891,7 +1572,9 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
               summary={summary}
               caseRanges={caseRanges}
               d={d}
+              t={t}
               settings={settings}
+              hiddenSections={hiddenSections}
               onCommitOverride={handleCommitOverride}
             />
           </div>
@@ -912,8 +1595,30 @@ interface SheetCommonProps {
   caseRanges: string[];
   docLang: DocLanguage;
   d: DocDictionary;
+  t: UiDictionary;
   settings: ContractSettings;
+  hiddenSections: string[];
   onCommitOverride?: (fieldKey: string, nextValue: string) => void;
+  onUpdateItem?: (
+    itemId: string,
+    patch: Partial<OrderItem>,
+    customPartOverride?: string,
+  ) => void;
+  onDeleteItem?: (itemId: string) => void;
+  onAddBlankItem?: () => void;
+  onAddItemFromProduct?: (productId: string) => void;
+  onUpdatePackingRow?: (rowId: string, patch: Partial<PackingListRow>) => void;
+  onAddPackingRow?: () => void;
+  onDeletePackingRow?: (rowId: string) => void;
+  onResetPackingAuto?: () => void;
+  onHideSection?: (sectionKey: string) => void;
+}
+
+function parseDocNumber(raw: string): number | null {
+  const cleaned = raw.replace(/[,$\s¥€]|USD|JPY|EUR|CNY|RMB/gi, '').trim();
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  return Number.isFinite(num) && num >= 0 ? num : null;
 }
 
 const HardlockLetterhead: React.FC<{
@@ -922,7 +1627,7 @@ const HardlockLetterhead: React.FC<{
   onCommitOverride?: (fieldKey: string, nextValue: string) => void;
 }> = ({ order, supplier, onCommitOverride }) => (
   <div>
-    <div className="text-center text-[22px] md:text-[24px] font-bold tracking-tight text-black pb-1 border-b-2 border-black leading-tight">
+    <div className="text-center doc-company-title font-bold tracking-tight text-black pb-1 border-b-2 border-black leading-tight">
       <EditableText
         order={order}
         fieldKey="inv.supplierName"
@@ -930,7 +1635,7 @@ const HardlockLetterhead: React.FC<{
         onCommit={onCommitOverride}
       />
     </div>
-    <div className="flex justify-between items-start gap-4 pt-1 text-[11px] leading-[1.35] text-black">
+    <div className="flex justify-between items-start gap-4 pt-1 text-black">
       <div className="whitespace-pre-line">
         <EditableText
           order={order}
@@ -942,13 +1647,39 @@ const HardlockLetterhead: React.FC<{
           onCommit={onCommitOverride}
           multiline
         />
-        {supplier?.taxOrExporterId
-          ? `\nTax ID : ${supplier.taxOrExporterId}`
-          : ''}
+        {(supplier?.taxOrExporterId || order.docOverrides?.['inv.supplierTaxId']) && (
+          <div>
+            Tax ID :{' '}
+            <EditableText
+              order={order}
+              fieldKey="inv.supplierTaxId"
+              fallback={supplier?.taxOrExporterId || ''}
+              onCommit={onCommitOverride}
+            />
+          </div>
+        )}
       </div>
       <div className="text-right shrink-0 tabular-nums">
-        <div>Tel : {supplier?.phone || '81-6-6784-1131'}</div>
-        {supplier?.fax && <div>Fax : {supplier.fax}</div>}
+        <div>
+          Tel :{' '}
+          <EditableText
+            order={order}
+            fieldKey="inv.supplierTel"
+            fallback={supplier?.phone || '81-6-6784-1131'}
+            onCommit={onCommitOverride}
+          />
+        </div>
+        {(supplier?.fax || order.docOverrides?.['inv.supplierFax']) && (
+          <div>
+            Fax :{' '}
+            <EditableText
+              order={order}
+              fieldKey="inv.supplierFax"
+              fallback={supplier?.fax || ''}
+              onCommit={onCommitOverride}
+            />
+          </div>
+        )}
       </div>
     </div>
   </div>
@@ -960,9 +1691,18 @@ const PartyAddressBlock: React.FC<{
   party: Customer | undefined;
   nameKey: string;
   addressKey: string;
+  prefixKey: string;
   onCommitOverride?: (fieldKey: string, nextValue: string) => void;
-}> = ({ order, heading, party, nameKey, addressKey, onCommitOverride }) => (
-  <div className="text-[11px] leading-[1.32] text-black">
+}> = ({
+  order,
+  heading,
+  party,
+  nameKey,
+  addressKey,
+  prefixKey,
+  onCommitOverride,
+}) => (
+  <div className="text-black">
     <div className="font-bold underline underline-offset-2">{heading}</div>
     <div className="font-bold mt-0.5 uppercase">
       <EditableText
@@ -983,11 +1723,60 @@ const PartyAddressBlock: React.FC<{
         />
       </div>
     )}
-    {party?.country && <div>{party.country}</div>}
-    {party?.contactName && <div>Attn : {party.contactName}</div>}
-    {party?.phone && <div>Mobile : {party.phone}</div>}
-    {party?.fax && <div>Fax : {party.fax}</div>}
-    {party?.taxOrImporterId && <div>Tax ID : {party.taxOrImporterId}</div>}
+    {(party?.country || order.docOverrides?.[`${prefixKey}Country`]) && (
+      <div>
+        <EditableText
+          order={order}
+          fieldKey={`${prefixKey}Country`}
+          fallback={party?.country || ''}
+          onCommit={onCommitOverride}
+        />
+      </div>
+    )}
+    {(party?.contactName || order.docOverrides?.[`${prefixKey}Contact`]) && (
+      <div>
+        Attn :{' '}
+        <EditableText
+          order={order}
+          fieldKey={`${prefixKey}Contact`}
+          fallback={party?.contactName || ''}
+          onCommit={onCommitOverride}
+        />
+      </div>
+    )}
+    {(party?.phone || order.docOverrides?.[`${prefixKey}Phone`]) && (
+      <div>
+        Mobile :{' '}
+        <EditableText
+          order={order}
+          fieldKey={`${prefixKey}Phone`}
+          fallback={party?.phone || ''}
+          onCommit={onCommitOverride}
+        />
+      </div>
+    )}
+    {(party?.fax || order.docOverrides?.[`${prefixKey}Fax`]) && (
+      <div>
+        Fax :{' '}
+        <EditableText
+          order={order}
+          fieldKey={`${prefixKey}Fax`}
+          fallback={party?.fax || ''}
+          onCommit={onCommitOverride}
+        />
+      </div>
+    )}
+    {(party?.taxOrImporterId || order.docOverrides?.[`${prefixKey}TaxId`]) && (
+      <div>
+        Tax ID :{' '}
+        <EditableText
+          order={order}
+          fieldKey={`${prefixKey}TaxId`}
+          fallback={party?.taxOrImporterId || ''}
+          onCommit={onCommitOverride}
+        />
+      </div>
+    )}
   </div>
 );
 
@@ -1018,7 +1807,7 @@ const HardlockFooterSplit: React.FC<{
     settings.companyStampLabel || supplier?.name || 'HARDLOCK Industry Co., Ltd.';
 
   return (
-    <div className="mt-5 flex justify-between items-end gap-6 print-avoid-break text-[11px] leading-[1.38] text-black">
+    <div className="mt-5 flex justify-between items-end gap-6 print-avoid-break text-black">
       <div className="font-bold">
         {(order.shipping.shippingMarksMain ||
           order.docOverrides?.['inv.shippingMarks']) && (
@@ -1041,8 +1830,22 @@ const HardlockFooterSplit: React.FC<{
             onCommit={onCommitOverride}
           />
         </div>
-        <div>{ctnLine}</div>
-        <div>MADE IN {originCountry}</div>
+        <div>
+          <EditableText
+            order={order}
+            fieldKey="inv.ctnLine"
+            fallback={ctnLine}
+            onCommit={onCommitOverride}
+          />
+        </div>
+        <div>
+          <EditableText
+            order={order}
+            fieldKey="inv.madeInLine"
+            fallback={`MADE IN ${originCountry}`}
+            onCommit={onCommitOverride}
+          />
+        </div>
       </div>
 
       <div className="relative min-w-[230px] max-w-[270px]">
@@ -1060,8 +1863,13 @@ const HardlockFooterSplit: React.FC<{
             )}
           </div>
         )}
-        <div className="text-[11px]">
-          {supplier?.name || 'HARDLOCK Industry Co., Ltd.'}
+        <div>
+          <EditableText
+            order={order}
+            fieldKey="inv.signatoryCompany"
+            fallback={supplier?.name || 'HARDLOCK Industry Co., Ltd.'}
+            onCommit={onCommitOverride}
+          />
         </div>
         <div className="pt-1 pb-0.5 border-b border-black min-h-[28px] flex items-end">
           {showSig &&
@@ -1084,11 +1892,21 @@ const HardlockFooterSplit: React.FC<{
               </div>
             ))}
         </div>
-        <div className="mt-0.5 text-[11px]">
-          {supplier?.signatoryName || 'Mr. Song Shanghua'}
+        <div className="mt-0.5">
+          <EditableText
+            order={order}
+            fieldKey="inv.signatoryName"
+            fallback={supplier?.signatoryName || 'Mr. Song Shanghua'}
+            onCommit={onCommitOverride}
+          />
         </div>
-        <div className="text-[11px]">
-          {supplier?.signatoryTitle || 'Overseas Sales'}
+        <div>
+          <EditableText
+            order={order}
+            fieldKey="inv.signatoryTitle"
+            fallback={supplier?.signatoryTitle || 'Overseas Sales'}
+            onCommit={onCommitOverride}
+          />
         </div>
       </div>
     </div>
@@ -1106,8 +1924,15 @@ const InvoiceSheet: React.FC<
   products,
   summary,
   docLang,
+  t,
   settings,
+  hiddenSections,
   onCommitOverride,
+  onUpdateItem,
+  onDeleteItem,
+  onAddBlankItem,
+  onAddItemFromProduct,
+  onHideSection,
 }) => {
   const placeShort = getShortPlace(
     order.shipping.incotermPlace || order.shipping.portOfDischarge,
@@ -1180,8 +2005,26 @@ const InvoiceSheet: React.FC<
     });
   }
 
+  const canMutateRows = Boolean(onUpdateItem || onDeleteItem);
+  const defaultTitleText =
+    docLang === 'en'
+      ? 'INVOICE'
+      : docLang === 'ja'
+        ? 'INVOICE（商業送り状）'
+        : 'INVOICE（商业发票）';
+
+  const bankDefaultLines = bank
+    ? [
+        `${bank.bankName}${bank.swiftCode ? `(BIC : ${bank.swiftCode})` : ''}`,
+        bank.branchName || '',
+        `Account No. : ${bank.accountNumber}`,
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : '—';
+
   return (
-    <div className="space-y-2 text-[11px] leading-[1.35] text-black">
+    <div className="space-y-2 text-black">
       <HardlockLetterhead
         order={order}
         supplier={supplier}
@@ -1190,14 +2033,15 @@ const InvoiceSheet: React.FC<
 
       {/* Title & Reference */}
       <div className="pt-2">
-        <div className="text-center text-[18px] font-bold underline underline-offset-4 tracking-wide">
-          {docLang === 'en'
-            ? 'INVOICE'
-            : docLang === 'ja'
-              ? 'INVOICE（商業送り状）'
-              : 'INVOICE（商业发票）'}
+        <div className="text-center doc-title font-bold underline underline-offset-4 tracking-wide">
+          <EditableText
+            order={order}
+            fieldKey="inv.title"
+            fallback={defaultTitleText}
+            onCommit={onCommitOverride}
+          />
         </div>
-        <div className="text-center text-[12px] font-bold mt-0.5">
+        <div className="text-center font-bold mt-0.5">
           No.{' '}
           <EditableText
             order={order}
@@ -1206,7 +2050,7 @@ const InvoiceSheet: React.FC<
             onCommit={onCommitOverride}
           />
         </div>
-        <div className="text-right text-[11px] font-bold -mt-1">
+        <div className="text-right font-bold -mt-1">
           Date :{' '}
           <EditableText
             order={order}
@@ -1225,6 +2069,7 @@ const InvoiceSheet: React.FC<
           party={billToCustomer}
           nameKey="inv.billToName"
           addressKey="inv.billToAddress"
+          prefixKey="inv.billTo"
           onCommitOverride={onCommitOverride}
         />
         <PartyAddressBlock
@@ -1233,13 +2078,22 @@ const InvoiceSheet: React.FC<
           party={customer}
           nameKey="inv.shipToName"
           addressKey="inv.shipToAddress"
+          prefixKey="inv.shipTo"
           onCommitOverride={onCommitOverride}
         />
       </div>
 
       {/* Shipment Details + Right Notes */}
-      <div className="pt-2 space-y-0.5 text-[11px]">
-        <div>Shipment : on {shipmentDate}</div>
+      <div className="pt-2 space-y-0.5">
+        <div>
+          Shipment :{' '}
+          <EditableText
+            order={order}
+            fieldKey="inv.shipmentText"
+            fallback={`on ${shipmentDate}`}
+            onCommit={onCommitOverride}
+          />
+        </div>
         <div>
           Loading port :{' '}
           <EditableText
@@ -1248,10 +2102,32 @@ const InvoiceSheet: React.FC<
             fallback={order.shipping.portOfLoading || '—'}
             onCommit={onCommitOverride}
           />
-          {order.shipping.vesselOrFlightOrCourier
-            ? ` by "${order.shipping.vesselOrFlightOrCourier}"`
-            : ''}
-          {etdDisplay ? ` ETD ${etdDisplay}` : ''}
+          {(order.shipping.vesselOrFlightOrCourier ||
+            order.docOverrides?.['inv.vessel']) && (
+            <>
+              {' '}
+              by &quot;
+              <EditableText
+                order={order}
+                fieldKey="inv.vessel"
+                fallback={order.shipping.vesselOrFlightOrCourier || ''}
+                onCommit={onCommitOverride}
+              />
+              &quot;
+            </>
+          )}
+          {(etdDisplay || order.docOverrides?.['inv.etd']) && (
+            <>
+              {' '}
+              ETD{' '}
+              <EditableText
+                order={order}
+                fieldKey="inv.etd"
+                fallback={etdDisplay}
+                onCommit={onCommitOverride}
+              />
+            </>
+          )}
         </div>
         <div>
           Destination :{' '}
@@ -1261,12 +2137,23 @@ const InvoiceSheet: React.FC<
             fallback={order.shipping.portOfDischarge || '—'}
             onCommit={onCommitOverride}
           />
-          {etaDisplay ? ` ETA ${etaDisplay}` : ''}
+          {(etaDisplay || order.docOverrides?.['inv.eta']) && (
+            <>
+              {' '}
+              ETA{' '}
+              <EditableText
+                order={order}
+                fieldKey="inv.eta"
+                fallback={etaDisplay}
+                onCommit={onCommitOverride}
+              />
+            </>
+          )}
         </div>
       </div>
 
       <div className="flex justify-between items-end pt-1">
-        <div className="font-bold text-[11.5px]">
+        <div className="font-bold">
           ITEM :{' '}
           <EditableText
             order={order}
@@ -1275,14 +2162,35 @@ const InvoiceSheet: React.FC<
             onCommit={onCommitOverride}
           />
         </div>
-        <div className="text-right text-[10.5px] font-bold leading-tight">
-          <div className="italic">*Seller → Buyer transaction value only</div>
-          <div>*Currency : {formatCurrencyLabel(order.currency)}</div>
+        <div className="text-right font-bold leading-tight">
+          <div className="italic">
+            <EditableText
+              order={order}
+              fieldKey="inv.txNote"
+              fallback="*Seller → Buyer transaction value only"
+              onCommit={onCommitOverride}
+            />
+          </div>
+          <div>
+            *Currency :{' '}
+            <EditableText
+              order={order}
+              fieldKey="inv.currencyLabel"
+              fallback={formatCurrencyLabel(order.currency)}
+              onCommit={onCommitOverride}
+            />
+          </div>
           {order.currency !== 'JPY' && (
             <div>
-              *Exchange Rate : 1 {order.currency} ={' '}
-              {resolveEffectiveExchangeRate(order.currency, order.exchangeRate)}{' '}
-              JPY
+              <EditableText
+                order={order}
+                fieldKey="inv.exchangeRateLine"
+                fallback={`*Exchange Rate : 1 ${order.currency} = ${resolveEffectiveExchangeRate(
+                  order.currency,
+                  order.exchangeRate,
+                )} JPY`}
+                onCommit={onCommitOverride}
+              />
             </div>
           )}
         </div>
@@ -1290,29 +2198,29 @@ const InvoiceSheet: React.FC<
 
       {/* 11-Column Invoice Table */}
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[10.5px] tabular-nums">
+        <table className="w-full border-collapse doc-table tabular-nums">
           <thead>
             <tr className="font-bold text-center bg-white">
               <th
                 rowSpan={2}
-                className="border border-black px-1 py-1 w-9 leading-tight"
+                className="border border-black w-9 leading-tight"
               >
                 Item
                 <br />
                 No.
               </th>
-              <th rowSpan={2} className="border border-black px-1.5 py-1">
+              <th rowSpan={2} className="border border-black">
                 Item code
               </th>
-              <th rowSpan={2} className="border border-black px-1.5 py-1">
+              <th rowSpan={2} className="border border-black">
                 Size
               </th>
-              <th rowSpan={2} className="border border-black px-1.5 py-1">
+              <th rowSpan={2} className="border border-black">
                 Material
               </th>
               <th
                 rowSpan={2}
-                className="border border-black px-1 py-1 w-16 leading-tight"
+                className="border border-black w-16 leading-tight"
               >
                 Surface
                 <br />
@@ -1320,7 +2228,7 @@ const InvoiceSheet: React.FC<
               </th>
               <th
                 rowSpan={2}
-                className="border border-black px-1 py-1 w-14 leading-tight"
+                className="border border-black w-14 leading-tight"
               >
                 HS
                 <br />
@@ -1328,14 +2236,14 @@ const InvoiceSheet: React.FC<
               </th>
               <th
                 rowSpan={2}
-                className="border border-black px-1 py-1 w-14 leading-tight"
+                className="border border-black w-14 leading-tight"
               >
                 Q&apos;ty
                 <br />({primaryUnit})
               </th>
               <th
                 rowSpan={2}
-                className="border border-black px-1 py-1 w-14 leading-tight"
+                className="border border-black w-14 leading-tight"
               >
                 U.W
                 <br />
@@ -1343,7 +2251,7 @@ const InvoiceSheet: React.FC<
               </th>
               <th
                 rowSpan={2}
-                className="border border-black px-1 py-1 w-16 leading-tight"
+                className="border border-black w-16 leading-tight"
               >
                 N.W
                 <br />
@@ -1351,16 +2259,27 @@ const InvoiceSheet: React.FC<
               </th>
               <th
                 colSpan={2}
-                className="border border-black px-1.5 py-0.5 text-center leading-tight"
+                className="border border-black text-center leading-tight"
               >
-                {order.shipping.incoterm} {placeShort} in {order.currency}
+                <EditableText
+                  order={order}
+                  fieldKey="inv.termColHeader"
+                  fallback={`${order.shipping.incoterm} ${placeShort} in ${order.currency}`}
+                  onCommit={onCommitOverride}
+                />
               </th>
+              {canMutateRows && (
+                <th
+                  rowSpan={2}
+                  className="no-print border border-black w-8 text-center text-[10px] text-slate-500"
+                >
+                  {t.docDeleteRowLabel}
+                </th>
+              )}
             </tr>
             <tr className="font-bold text-center bg-white">
-              <th className="border border-black px-1.5 py-0.5 w-20">
-                U. Price
-              </th>
-              <th className="border border-black px-1.5 py-0.5 w-24">Amount</th>
+              <th className="border border-black w-20">U. Price</th>
+              <th className="border border-black w-24">Amount</th>
             </tr>
           </thead>
 
@@ -1374,83 +2293,256 @@ const InvoiceSheet: React.FC<
                 customer,
                 products,
               );
+              const customPartOverride = order.docOverrides?.[`inv.part.${item.id}`];
+              const shownPartName =
+                customPartOverride !== undefined
+                  ? customPartOverride
+                  : partDisplay.partName;
               return (
-                <tr key={item.id}>
-                  <td className="border border-black px-1 py-0.5 text-center">
+                <tr key={item.id} data-testid={`inv-row-${idx}`}>
+                  <td className="border border-black text-center">
                     {idx + 1}
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 font-semibold">
-                    <div className="leading-tight">{partDisplay.partName}</div>
-                    {partDisplay.sku &&
-                      partDisplay.partName !== partDisplay.sku && (
-                        <div className="text-[9px] font-normal text-slate-600 leading-tight whitespace-nowrap">
-                          {partDisplay.sku}
+                  <td className="border border-black font-semibold">
+                    <div className="leading-tight">
+                      <EditableText
+                        order={order}
+                        fieldKey={`inv.item.${idx}.partName`}
+                        fallback={shownPartName}
+                        directValue={shownPartName}
+                        onDirectCommit={
+                          onUpdateItem
+                            ? (val) =>
+                                onUpdateItem(
+                                  item.id,
+                                  { description: val },
+                                  partDisplay.hasCustomPartName ? val : undefined,
+                                )
+                            : undefined
+                        }
+                      />
+                    </div>
+                    {(partDisplay.sku || onUpdateItem) &&
+                      shownPartName !== partDisplay.sku && (
+                        <div className="doc-small-sub font-normal text-slate-600 leading-tight whitespace-nowrap">
+                          <EditableText
+                            order={order}
+                            fieldKey={`inv.item.${idx}.sku`}
+                            fallback={item.sku}
+                            directValue={item.sku}
+                            onDirectCommit={
+                              onUpdateItem
+                                ? (val) => onUpdateItem(item.id, { sku: val })
+                                : undefined
+                            }
+                          />
                         </div>
                       )}
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 whitespace-nowrap">
-                    {specs.size}
+                  <td className="border border-black whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`inv.item.${idx}.size`}
+                      fallback={specs.size}
+                      directValue={specs.size}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => onUpdateItem(item.id, { size: val })
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 whitespace-nowrap">
-                    {specs.material}
+                  <td className="border border-black whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`inv.item.${idx}.material`}
+                      fallback={specs.material}
+                      directValue={specs.material}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => onUpdateItem(item.id, { material: val })
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1 py-0.5 text-center whitespace-nowrap">
-                    {specs.surfaceFinish}
+                  <td className="border border-black text-center whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`inv.item.${idx}.finish`}
+                      fallback={specs.surfaceFinish}
+                      directValue={specs.surfaceFinish}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) =>
+                              onUpdateItem(item.id, { surfaceFinish: val })
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1 py-0.5 text-center whitespace-nowrap">
-                    {formatCompactHsCode(item.hsCode)}
+                  <td className="border border-black text-center whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`inv.item.${idx}.hsCode`}
+                      fallback={formatCompactHsCode(item.hsCode)}
+                      directValue={formatCompactHsCode(item.hsCode)}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => onUpdateItem(item.id, { hsCode: val })
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 text-right whitespace-nowrap">
-                    {item.quantity.toLocaleString()}
+                  <td className="border border-black text-right whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`inv.item.${idx}.qty`}
+                      fallback={item.quantity.toLocaleString()}
+                      directValue={item.quantity.toLocaleString()}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null) {
+                                onUpdateItem(item.id, { quantity: parsed });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 text-right whitespace-nowrap">
-                    {formatNumberNoRound(item.unitNetWeightKg || 0, 0)}
+                  <td className="border border-black text-right whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`inv.item.${idx}.uw`}
+                      fallback={formatNumberNoRound(item.unitNetWeightKg || 0, 0)}
+                      directValue={formatNumberNoRound(
+                        item.unitNetWeightKg || 0,
+                        0,
+                      )}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null) {
+                                onUpdateItem(item.id, {
+                                  unitNetWeightKg: parsed,
+                                });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 text-right whitespace-nowrap">
+                  <td className="border border-black text-right whitespace-nowrap">
                     {formatWeight1(calc?.netWeightKg ?? 0)}
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 text-right whitespace-nowrap">
-                    {formatDocMoney(item.unitPrice, order.currency)}
+                  <td className="border border-black text-right whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`inv.item.${idx}.unitPrice`}
+                      fallback={formatDocMoney(item.unitPrice, order.currency)}
+                      directValue={formatDocMoney(item.unitPrice, order.currency)}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null) {
+                                onUpdateItem(item.id, { unitPrice: parsed });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 text-right whitespace-nowrap">
+                  <td className="border border-black text-right whitespace-nowrap">
                     {formatDocMoney(calc?.amount ?? 0, order.currency)}
                   </td>
+                  {canMutateRows && (
+                    <td className="no-print border border-black text-center">
+                      {onDeleteItem && (
+                        <button
+                          type="button"
+                          data-testid={`inv-delete-row-${idx}`}
+                          title={t.docDeleteRowLabel}
+                          aria-label={t.docDeleteRowLabel}
+                          onClick={() => onDeleteItem(item.id)}
+                          className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
 
             <tr className="font-bold">
-              <td colSpan={6} className="px-0.5 pt-1 text-[10px]">
-                {footnotes[0] ?? ''}
+              <td colSpan={6} className="pt-1 align-top">
+                {!hiddenSections.includes('inv.footnotes') &&
+                  (footnotes.length > 0 || order.docOverrides?.['inv.footnote0']) && (
+                    <div className="inline-flex items-center gap-1">
+                      <EditableText
+                        order={order}
+                        fieldKey="inv.footnote0"
+                        fallback={footnotes[0] ?? ''}
+                        onCommit={onCommitOverride}
+                      />
+                      {onHideSection && footnotes[0] && (
+                        <button
+                          type="button"
+                          onClick={() => onHideSection('inv.footnotes')}
+                          title={t.docDeleteSectionLabel}
+                          className="no-print text-slate-400 hover:text-red-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  )}
               </td>
-              <td className="px-1.5 pt-1 text-right">
+              <td className="pt-1 text-right">
                 {summary.totalQuantity.toLocaleString()}
               </td>
               <td />
-              <td className="px-1.5 pt-1 text-right">
+              <td className="pt-1 text-right">
                 {formatWeight1(summary.totalNetWeightKg)}
               </td>
-              <td colSpan={2} />
+              <td colSpan={canMutateRows ? 3 : 2} />
             </tr>
 
             {costRows.map((row, rIdx) => (
               <tr key={row.label}>
-                <td colSpan={6} className="px-0.5 text-[10px] font-bold">
-                  {rIdx === 0
-                    ? (footnotes[1] ?? '')
-                    : rIdx === 1
-                      ? (footnotes[2] ?? '')
-                      : ''}
+                <td colSpan={6} className="font-bold">
+                  {!hiddenSections.includes('inv.footnotes') &&
+                    (rIdx === 0 && (footnotes[1] || order.docOverrides?.['inv.footnote1']) ? (
+                      <EditableText
+                        order={order}
+                        fieldKey="inv.footnote1"
+                        fallback={footnotes[1] ?? ''}
+                        onCommit={onCommitOverride}
+                      />
+                    ) : rIdx === 1 && (footnotes[2] || order.docOverrides?.['inv.footnote2']) ? (
+                      <EditableText
+                        order={order}
+                        fieldKey="inv.footnote2"
+                        fallback={footnotes[2] ?? ''}
+                        onCommit={onCommitOverride}
+                      />
+                    ) : (
+                      ''
+                    ))}
                 </td>
                 <td
                   colSpan={4}
-                  className="px-2 py-0.5 text-right font-bold whitespace-nowrap"
+                  className="text-right font-bold whitespace-nowrap"
                 >
                   {row.label}
                 </td>
-                <td className="px-1.5 py-0.5 text-right font-bold border-b border-dotted border-black whitespace-nowrap">
+                <td className="text-right font-bold border-b border-dotted border-black whitespace-nowrap">
                   {formatDocMoney(row.amount, order.currency)}
                 </td>
+                {canMutateRows && <td className="no-print" />}
               </tr>
             ))}
 
@@ -1458,20 +2550,58 @@ const InvoiceSheet: React.FC<
               <td colSpan={6} />
               <td
                 colSpan={4}
-                className="px-2 py-0.5 text-right font-bold whitespace-nowrap"
+                className="text-right font-bold whitespace-nowrap"
               >
                 {order.shipping.incoterm} {placeShort}
               </td>
-              <td className="px-1.5 py-0.5 text-right font-bold border-t border-black border-b-4 border-double whitespace-nowrap">
+              <td className="text-right font-bold border-t border-black border-b-4 border-double whitespace-nowrap">
                 {formatDocMoney(summary.incotermTotal, order.currency)}
               </td>
+              {canMutateRows && <td className="no-print" />}
             </tr>
           </tbody>
         </table>
+
+        {(onAddBlankItem || onAddItemFromProduct) && (
+          <div className="no-print mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {onAddBlankItem && (
+              <button
+                type="button"
+                data-testid="inv-add-blank-row-btn"
+                onClick={onAddBlankItem}
+                className="inline-flex items-center gap-1 px-2.5 py-1 font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t.docAddBlankRow}</span>
+              </button>
+            )}
+            {onAddItemFromProduct && products.length > 0 && (
+              <select
+                data-testid="inv-add-product-select"
+                defaultValue=""
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) {
+                    onAddItemFromProduct(val);
+                    e.target.value = '';
+                  }
+                }}
+                className="h-7 px-2 text-xs bg-white border border-slate-300 rounded text-slate-700"
+              >
+                <option value="">{t.docAddProductFromCatalog}</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.sku} · {p.nameEn}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Lower Packing Summary + Origin */}
-      <div className="flex justify-between items-end gap-6 pt-2 text-[11px] leading-[1.45]">
+      <div className="flex justify-between items-end gap-6 pt-2">
         <div>
           <div>
             <EditableText
@@ -1520,15 +2650,27 @@ const InvoiceSheet: React.FC<
         </div>
 
         <div className="text-right font-bold space-y-3">
-          <div className="underline underline-offset-2">{freightLabel}</div>
           <div className="underline underline-offset-2">
-            COUNTRY OF ORIGIN : {originCountry}
+            <EditableText
+              order={order}
+              fieldKey="inv.freightLabel"
+              fallback={freightLabel}
+              onCommit={onCommitOverride}
+            />
+          </div>
+          <div className="underline underline-offset-2">
+            <EditableText
+              order={order}
+              fieldKey="inv.originText"
+              fallback={`COUNTRY OF ORIGIN : ${originCountry}`}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
       </div>
 
       {/* Payment Terms & Bank Information */}
-      <div className="pt-2 space-y-2 text-[11px] leading-[1.4]">
+      <div className="pt-2 space-y-2">
         <div>
           <span className="font-bold underline underline-offset-2">
             Payment terms
@@ -1542,35 +2684,59 @@ const InvoiceSheet: React.FC<
           />
         </div>
 
-        <div>
-          <div className="font-bold underline underline-offset-2">
-            Bank Information
-          </div>
-          {bank ? (
-            <div>
-              <div>
-                {bank.bankName}
-                {bank.swiftCode ? `(BIC : ${bank.swiftCode})` : ''}
-              </div>
-              {bank.branchName && <div>{bank.branchName}</div>}
-              <div>Account No. : {bank.accountNumber}</div>
+        {!hiddenSections.includes('inv.bankInfo') && (
+          <div className="group relative">
+            <div className="font-bold underline underline-offset-2 inline-flex items-center gap-1.5">
+              <span>Bank Information</span>
+              {onHideSection && (
+                <button
+                  type="button"
+                  data-testid="inv-hide-bank-btn"
+                  title={t.docDeleteSectionLabel}
+                  onClick={() => onHideSection('inv.bankInfo')}
+                  className="no-print text-slate-400 hover:text-red-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-          ) : (
-            <div>—</div>
-          )}
-        </div>
-
-        {(order.remarks || order.docOverrides?.['inv.remarks']) && (
-          <div className="text-[10.5px] text-slate-800 pt-0.5">
-            Remarks :{' '}
-            <EditableText
-              order={order}
-              fieldKey="inv.remarks"
-              fallback={order.remarks || ''}
-              onCommit={onCommitOverride}
-            />
+            <div className="whitespace-pre-line">
+              <EditableText
+                order={order}
+                fieldKey="inv.bankInfo"
+                fallback={bankDefaultLines}
+                onCommit={onCommitOverride}
+                multiline
+              />
+            </div>
           </div>
         )}
+
+        {!hiddenSections.includes('inv.remarks') &&
+          (order.remarks || order.docOverrides?.['inv.remarks'] !== undefined) && (
+            <div className="text-slate-800 pt-0.5 flex items-center gap-1.5">
+              <span>
+                Remarks :{' '}
+                <EditableText
+                  order={order}
+                  fieldKey="inv.remarks"
+                  fallback={order.remarks || ''}
+                  onCommit={onCommitOverride}
+                />
+              </span>
+              {onHideSection && (
+                <button
+                  type="button"
+                  data-testid="inv-hide-remarks-btn"
+                  title={t.docDeleteSectionLabel}
+                  onClick={() => onHideSection('inv.remarks')}
+                  className="no-print text-slate-400 hover:text-red-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
       </div>
 
       <HardlockFooterSplit
@@ -1599,8 +2765,15 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
   products,
   summary,
   docLang,
+  t,
   settings,
+  hiddenSections,
   onCommitOverride,
+  onUpdatePackingRow,
+  onAddPackingRow,
+  onDeletePackingRow,
+  onResetPackingAuto,
+  onHideSection,
 }) => {
   const displayRows = useMemo(
     () =>
@@ -1662,8 +2835,19 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
   const originSentence =
     originCountry.charAt(0) + originCountry.slice(1).toLowerCase();
 
+  const canMutatePacking = Boolean(onUpdatePackingRow || onDeletePackingRow);
+  const hasCustomPackingRows = Boolean(
+    order.packingRows && order.packingRows.length > 0,
+  );
+  const defaultPlTitle =
+    docLang === 'en'
+      ? 'PACKING LIST'
+      : docLang === 'ja'
+        ? 'PACKING LIST（梱包明細書）'
+        : 'PACKING LIST（装箱单）';
+
   return (
-    <div className="space-y-2 text-[11px] leading-[1.35] text-black">
+    <div className="space-y-2 text-black">
       <HardlockLetterhead
         order={order}
         supplier={supplier}
@@ -1672,14 +2856,15 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
 
       {/* Title & Reference */}
       <div className="pt-2">
-        <div className="text-center text-[18px] font-bold underline underline-offset-4 tracking-wide">
-          {docLang === 'en'
-            ? 'PACKING LIST'
-            : docLang === 'ja'
-              ? 'PACKING LIST（梱包明細書）'
-              : 'PACKING LIST（装箱单）'}
+        <div className="text-center doc-title font-bold underline underline-offset-4 tracking-wide">
+          <EditableText
+            order={order}
+            fieldKey="pl.title"
+            fallback={defaultPlTitle}
+            onCommit={onCommitOverride}
+          />
         </div>
-        <div className="text-center text-[12px] font-bold mt-0.5">
+        <div className="text-center font-bold mt-0.5">
           INVOICE No.{' '}
           <EditableText
             order={order}
@@ -1688,7 +2873,7 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
             onCommit={onCommitOverride}
           />
         </div>
-        <div className="text-right text-[11px] font-bold -mt-1">
+        <div className="text-right font-bold -mt-1">
           Date :{' '}
           <EditableText
             order={order}
@@ -1707,6 +2892,7 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
           party={billToCustomer}
           nameKey="inv.billToName"
           addressKey="inv.billToAddress"
+          prefixKey="inv.billTo"
           onCommitOverride={onCommitOverride}
         />
         <PartyAddressBlock
@@ -1715,13 +2901,22 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
           party={customer}
           nameKey="inv.shipToName"
           addressKey="inv.shipToAddress"
+          prefixKey="inv.shipTo"
           onCommitOverride={onCommitOverride}
         />
       </div>
 
       {/* Shipment Details */}
-      <div className="pt-2 space-y-0.5 text-[11px]">
-        <div>Shipment : on {shipmentDate}</div>
+      <div className="pt-2 space-y-0.5">
+        <div>
+          Shipment :{' '}
+          <EditableText
+            order={order}
+            fieldKey="inv.shipmentText"
+            fallback={`on ${shipmentDate}`}
+            onCommit={onCommitOverride}
+          />
+        </div>
         <div>
           Loading port :{' '}
           <EditableText
@@ -1730,10 +2925,32 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
             fallback={order.shipping.portOfLoading || '—'}
             onCommit={onCommitOverride}
           />
-          {order.shipping.vesselOrFlightOrCourier
-            ? ` by "${order.shipping.vesselOrFlightOrCourier}"`
-            : ''}
-          {etdDisplay ? ` ETD ${etdDisplay}` : ''}
+          {(order.shipping.vesselOrFlightOrCourier ||
+            order.docOverrides?.['inv.vessel']) && (
+            <>
+              {' '}
+              by &quot;
+              <EditableText
+                order={order}
+                fieldKey="inv.vessel"
+                fallback={order.shipping.vesselOrFlightOrCourier || ''}
+                onCommit={onCommitOverride}
+              />
+              &quot;
+            </>
+          )}
+          {(etdDisplay || order.docOverrides?.['inv.etd']) && (
+            <>
+              {' '}
+              ETD{' '}
+              <EditableText
+                order={order}
+                fieldKey="inv.etd"
+                fallback={etdDisplay}
+                onCommit={onCommitOverride}
+              />
+            </>
+          )}
         </div>
         <div>
           Destination :{' '}
@@ -1743,11 +2960,22 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
             fallback={order.shipping.portOfDischarge || '—'}
             onCommit={onCommitOverride}
           />
-          {etaDisplay ? ` ETA ${etaDisplay}` : ''}
+          {(etaDisplay || order.docOverrides?.['inv.eta']) && (
+            <>
+              {' '}
+              ETA{' '}
+              <EditableText
+                order={order}
+                fieldKey="inv.eta"
+                fallback={etaDisplay}
+                onCommit={onCommitOverride}
+              />
+            </>
+          )}
         </div>
       </div>
 
-      <div className="font-bold text-[11.5px] pt-1">
+      <div className="font-bold pt-1">
         ITEM :{' '}
         <EditableText
           order={order}
@@ -1755,155 +2983,414 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
           fallback={order.itemHeader?.trim() || 'HARDLOCK NUT'}
           onCommit={onCommitOverride}
         />{' '}
-        (HS CODE : {compactHsDigits})
+        (HS CODE :{' '}
+        <EditableText
+          order={order}
+          fieldKey="pl.hsCodeHeader"
+          fallback={compactHsDigits}
+          onCommit={onCommitOverride}
+        />
+        )
       </div>
 
       {/* 11-Column Pallet-Merged Packing List Table */}
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[10.5px] tabular-nums">
+        <table className="w-full border-collapse doc-table tabular-nums">
           <thead>
             <tr className="font-bold text-center bg-white">
-              <th className="border border-black px-1 py-1 w-16 whitespace-nowrap leading-tight">
+              <th className="border border-black w-16 whitespace-nowrap leading-tight">
                 Pallet
                 <br />
                 No.
               </th>
-              <th className="border border-black px-1 py-1 w-14 leading-tight">
+              <th className="border border-black w-14 leading-tight">
                 Ctn.
                 <br />
                 No.
               </th>
-              <th className="border border-black px-1 py-1 w-10 leading-tight">
+              <th className="border border-black w-10 leading-tight">
                 Item
                 <br />
                 No.
               </th>
-              <th className="border border-black px-1.5 py-1">Type</th>
-              <th className="border border-black px-1.5 py-1">Size</th>
-              <th className="border border-black px-1.5 py-1">Material</th>
-              <th className="border border-black px-1 py-1 w-14 leading-tight">
+              <th className="border border-black">Type</th>
+              <th className="border border-black">Size</th>
+              <th className="border border-black">Material</th>
+              <th className="border border-black w-14 leading-tight">
                 Surface
                 <br />
                 Finish
               </th>
-              <th className="border border-black px-2 py-1 min-w-[140px]">
+              <th className="border border-black min-w-[140px]">
                 Description
               </th>
-              <th className="border border-black px-1 py-1 w-14 leading-tight">
+              <th className="border border-black w-14 leading-tight">
                 Q&apos;ty
                 <br />({primaryUnit})
               </th>
-              <th className="border border-black px-1 py-1 w-14 leading-tight">
+              <th className="border border-black w-14 leading-tight">
                 U.W
                 <br />
                 (kg)
               </th>
-              <th className="border border-black px-1 py-1 w-14 leading-tight">
+              <th className="border border-black w-14 leading-tight">
                 T.W
                 <br />
                 (kg)
               </th>
+              {canMutatePacking && (
+                <th className="no-print border border-black w-8 text-center text-[10px] text-slate-500">
+                  {t.docDeleteRowLabel}
+                </th>
+              )}
             </tr>
           </thead>
 
           <tbody>
-            {displayRows.map((row) => {
+            {displayRows.map((row, idx) => {
               const cellBorder = row.isSubRowInSameCtn
                 ? 'border border-solid border-black [border-top-style:dotted]'
                 : 'border border-solid border-black';
               return (
-                <tr key={row.id}>
+                <tr key={row.id} data-testid={`pl-row-${idx}`}>
                   {row.showPalletCell && (
                     <td
                       rowSpan={row.palletRowSpan}
-                      className="border border-black px-1 py-0.5 text-center align-middle font-semibold"
+                      className="border border-black text-center align-middle font-semibold"
                     >
-                      {row.palletNo}
+                      <EditableText
+                        order={order}
+                        fieldKey={`pl.row.${idx}.palletNo`}
+                        fallback={row.palletNo}
+                        directValue={row.palletNo}
+                        onDirectCommit={
+                          onUpdatePackingRow
+                            ? (val) =>
+                                onUpdatePackingRow(row.id, { palletNo: val })
+                            : undefined
+                        }
+                      />
                     </td>
                   )}
                   {row.showCtnCell && (
                     <td
                       rowSpan={row.ctnRowSpan}
-                      className="border border-black px-1 py-0.5 text-center align-middle whitespace-nowrap"
+                      className="border border-black text-center align-middle whitespace-nowrap"
                     >
-                      {row.ctnNo}
+                      <EditableText
+                        order={order}
+                        fieldKey={`pl.row.${idx}.ctnNo`}
+                        fallback={row.ctnNo}
+                        directValue={row.ctnNo}
+                        onDirectCommit={
+                          onUpdatePackingRow
+                            ? (val) =>
+                                onUpdatePackingRow(row.id, { ctnNo: val })
+                            : undefined
+                        }
+                      />
                     </td>
                   )}
-                  <td className={`${cellBorder} px-1 py-0.5 text-center`}>
-                    {row.itemNo}
+                  <td className={`${cellBorder} text-center`}>
+                    <EditableText
+                      order={order}
+                      fieldKey={`pl.row.${idx}.itemNo`}
+                      fallback={String(row.itemNo)}
+                      directValue={String(row.itemNo)}
+                      onDirectCommit={
+                        onUpdatePackingRow
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null && parsed >= 1) {
+                                onUpdatePackingRow(row.id, { itemNo: parsed });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className={`${cellBorder} px-1.5 py-0.5 font-semibold`}>
+                  <td className={`${cellBorder} font-semibold`}>
                     <div className="leading-tight">
-                      {row.partName || row.type || '—'}
+                      <EditableText
+                        order={order}
+                        fieldKey={`pl.row.${idx}.partName`}
+                        fallback={row.partName || row.type || '—'}
+                        directValue={row.partName || row.type || '—'}
+                        onDirectCommit={
+                          onUpdatePackingRow
+                            ? (val) =>
+                                onUpdatePackingRow(row.id, {
+                                  partName: val,
+                                  ...(row.partName ? {} : { type: val }),
+                                })
+                            : undefined
+                        }
+                      />
                     </div>
-                    {row.type && row.partName && row.partName !== row.type && (
-                      <div className="text-[9px] font-normal text-slate-600 leading-tight whitespace-nowrap">
-                        {row.type}
-                      </div>
-                    )}
+                    {(row.type || onUpdatePackingRow) &&
+                      row.partName &&
+                      row.partName !== row.type && (
+                        <div className="doc-small-sub font-normal text-slate-600 leading-tight whitespace-nowrap">
+                          <EditableText
+                            order={order}
+                            fieldKey={`pl.row.${idx}.type`}
+                            fallback={row.type}
+                            directValue={row.type}
+                            onDirectCommit={
+                              onUpdatePackingRow
+                                ? (val) =>
+                                    onUpdatePackingRow(row.id, { type: val })
+                                : undefined
+                            }
+                          />
+                        </div>
+                      )}
                   </td>
-                  <td className={`${cellBorder} px-1.5 py-0.5 whitespace-nowrap`}>
-                    {row.size}
+                  <td className={`${cellBorder} whitespace-nowrap`}>
+                    <EditableText
+                      order={order}
+                      fieldKey={`pl.row.${idx}.size`}
+                      fallback={row.size}
+                      directValue={row.size}
+                      onDirectCommit={
+                        onUpdatePackingRow
+                          ? (val) => onUpdatePackingRow(row.id, { size: val })
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className={`${cellBorder} px-1.5 py-0.5 whitespace-nowrap`}>
-                    {row.material}
+                  <td className={`${cellBorder} whitespace-nowrap`}>
+                    <EditableText
+                      order={order}
+                      fieldKey={`pl.row.${idx}.material`}
+                      fallback={row.material}
+                      directValue={row.material}
+                      onDirectCommit={
+                        onUpdatePackingRow
+                          ? (val) =>
+                              onUpdatePackingRow(row.id, { material: val })
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className={`${cellBorder} px-1 py-0.5 text-center`}>
-                    {row.surfaceFinish}
+                  <td className={`${cellBorder} text-center`}>
+                    <EditableText
+                      order={order}
+                      fieldKey={`pl.row.${idx}.finish`}
+                      fallback={row.surfaceFinish}
+                      directValue={row.surfaceFinish}
+                      onDirectCommit={
+                        onUpdatePackingRow
+                          ? (val) =>
+                              onUpdatePackingRow(row.id, { surfaceFinish: val })
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className={`${cellBorder} px-2 py-0.5 whitespace-nowrap`}>
+                  <td className={`${cellBorder} whitespace-nowrap`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-right min-w-[62px]">
-                        {row.setsPerCarton.toLocaleString()} {row.unitLabel}
+                        <EditableText
+                          order={order}
+                          fieldKey={`pl.row.${idx}.setsPerCarton`}
+                          fallback={row.setsPerCarton.toLocaleString()}
+                          directValue={row.setsPerCarton.toLocaleString()}
+                          onDirectCommit={
+                            onUpdatePackingRow
+                              ? (val) => {
+                                  const parsed = parseDocNumber(val);
+                                  if (parsed !== null) {
+                                    onUpdatePackingRow(row.id, {
+                                      setsPerCarton: parsed,
+                                    });
+                                  }
+                                }
+                              : undefined
+                          }
+                        />{' '}
+                        {row.unitLabel}
                       </span>
                       <span>x</span>
                       <span className="text-right min-w-[52px]">
-                        {row.cartonCount} carton
+                        <EditableText
+                          order={order}
+                          fieldKey={`pl.row.${idx}.cartonCount`}
+                          fallback={String(row.cartonCount)}
+                          directValue={String(row.cartonCount)}
+                          onDirectCommit={
+                            onUpdatePackingRow
+                              ? (val) => {
+                                  const parsed = parseDocNumber(val);
+                                  if (parsed !== null) {
+                                    onUpdatePackingRow(row.id, {
+                                      cartonCount: parsed,
+                                    });
+                                  }
+                                }
+                              : undefined
+                          }
+                        />{' '}
+                        carton
                       </span>
                     </div>
                   </td>
                   <td
-                    className={`${cellBorder} px-1.5 py-0.5 text-right whitespace-nowrap`}
+                    className={`${cellBorder} text-right whitespace-nowrap`}
                   >
-                    {row.qty.toLocaleString()}
+                    <EditableText
+                      order={order}
+                      fieldKey={`pl.row.${idx}.qty`}
+                      fallback={row.qty.toLocaleString()}
+                      directValue={row.qty.toLocaleString()}
+                      onDirectCommit={
+                        onUpdatePackingRow
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null) {
+                                onUpdatePackingRow(row.id, { qty: parsed });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
                   <td
-                    className={`${cellBorder} px-1.5 py-0.5 text-right whitespace-nowrap`}
+                    className={`${cellBorder} text-right whitespace-nowrap`}
                   >
-                    {formatNumberNoRound(row.unitWeightKg || 0, 0)}
+                    <EditableText
+                      order={order}
+                      fieldKey={`pl.row.${idx}.uw`}
+                      fallback={formatNumberNoRound(row.unitWeightKg || 0, 0)}
+                      directValue={formatNumberNoRound(
+                        row.unitWeightKg || 0,
+                        0,
+                      )}
+                      onDirectCommit={
+                        onUpdatePackingRow
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null) {
+                                onUpdatePackingRow(row.id, {
+                                  unitWeightKg: parsed,
+                                });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
                   <td
-                    className={`${cellBorder} px-1.5 py-0.5 text-right whitespace-nowrap`}
+                    className={`${cellBorder} text-right whitespace-nowrap`}
                   >
-                    {formatWeight1(row.totalWeightKg || 0)}
+                    <EditableText
+                      order={order}
+                      fieldKey={`pl.row.${idx}.tw`}
+                      fallback={formatWeight1(row.totalWeightKg || 0)}
+                      directValue={formatWeight1(row.totalWeightKg || 0)}
+                      onDirectCommit={
+                        onUpdatePackingRow
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null) {
+                                onUpdatePackingRow(row.id, {
+                                  totalWeightKg: parsed,
+                                });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
+                  {canMutatePacking && (
+                    <td className="no-print border border-black text-center">
+                      {onDeletePackingRow && (
+                        <button
+                          type="button"
+                          data-testid={`pl-delete-row-${idx}`}
+                          title={t.docDeleteRowLabel}
+                          aria-label={t.docDeleteRowLabel}
+                          onClick={() => onDeletePackingRow(row.id)}
+                          className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
 
             <tr className="font-bold">
-              <td colSpan={7} className="px-0.5 pt-1 text-[10px] align-top">
-                {footnotes.map((fn) => (
-                  <div key={fn}>{fn}</div>
-                ))}
+              <td colSpan={7} className="pt-1 align-top">
+                {!hiddenSections.includes('pl.footnotes') &&
+                  (footnotes.length > 0 || order.docOverrides?.['pl.footnotes']) && (
+                    <div className="inline-flex items-start gap-1">
+                      <EditableText
+                        order={order}
+                        fieldKey="pl.footnotes"
+                        fallback={footnotes.join('\n')}
+                        onCommit={onCommitOverride}
+                        multiline
+                      />
+                      {onHideSection && footnotes.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onHideSection('pl.footnotes')}
+                          title={t.docDeleteSectionLabel}
+                          className="no-print text-slate-400 hover:text-red-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  )}
               </td>
-              <td className="px-2 pt-1 text-right align-top whitespace-nowrap">
+              <td className="pt-1 text-right align-top whitespace-nowrap">
                 {plTotalCartons} cartons
               </td>
-              <td className="px-1.5 pt-1 text-right align-top whitespace-nowrap">
+              <td className="pt-1 text-right align-top whitespace-nowrap">
                 {plTotalQty.toLocaleString()}
               </td>
               <td />
-              <td className="px-1.5 pt-1 text-right align-top whitespace-nowrap">
+              <td className="pt-1 text-right align-top whitespace-nowrap">
                 {formatWeight1(plTotalTw)}
               </td>
+              {canMutatePacking && <td className="no-print" />}
             </tr>
           </tbody>
         </table>
+
+        {(onAddPackingRow || onResetPackingAuto) && (
+          <div className="no-print mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {onAddPackingRow && (
+              <button
+                type="button"
+                data-testid="pl-add-row-btn"
+                onClick={onAddPackingRow}
+                className="inline-flex items-center gap-1 px-2.5 py-1 font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t.docAddPackingRow}</span>
+              </button>
+            )}
+            {hasCustomPackingRows && onResetPackingAuto && (
+              <button
+                type="button"
+                data-testid="pl-reset-auto-btn"
+                onClick={onResetPackingAuto}
+                className="inline-flex items-center gap-1 px-2.5 py-1 font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{t.docResetPackingAuto}</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Lower Packing Summary */}
-      <div className="flex justify-between items-start gap-6 pt-3 text-[11px] leading-[1.45]">
+      <div className="flex justify-between items-start gap-6 pt-3">
         <div>
           <div>
             <EditableText
@@ -1947,16 +3434,39 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
               onCommit={onCommitOverride}
             />
           </div>
-          {order.palletVolumeDetails && (
-            <div className="font-bold whitespace-pre-line mt-1">
-              {order.palletVolumeDetails}
-            </div>
-          )}
+          {!hiddenSections.includes('pl.palletVolumeDetails') &&
+            (order.palletVolumeDetails ||
+              order.docOverrides?.['pl.palletVolumeDetails']) && (
+              <div className="font-bold whitespace-pre-line mt-1 inline-flex items-start gap-1.5">
+                <EditableText
+                  order={order}
+                  fieldKey="pl.palletVolumeDetails"
+                  fallback={order.palletVolumeDetails || ''}
+                  onCommit={onCommitOverride}
+                  multiline
+                />
+                {onHideSection && (
+                  <button
+                    type="button"
+                    onClick={() => onHideSection('pl.palletVolumeDetails')}
+                    title={t.docDeleteSectionLabel}
+                    className="no-print text-slate-400 hover:text-red-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            )}
         </div>
 
         <div className="text-right font-bold pt-4">
           <div className="underline underline-offset-2">
-            Country of Origin : {originSentence}
+            <EditableText
+              order={order}
+              fieldKey="pl.originSentence"
+              fallback={`Country of Origin : ${originSentence}`}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
       </div>
@@ -1987,8 +3497,13 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
   products,
   summary,
   docLang,
+  t,
   settings,
   onCommitOverride,
+  onUpdateItem,
+  onDeleteItem,
+  onAddBlankItem,
+  onAddItemFromProduct,
 }) => {
   const buyer = billToCustomer ?? customer;
   const placeShort = getShortPlace(
@@ -2003,11 +3518,12 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
   const showSig = special.showSignature !== false;
   const stampLabel =
     settings.companyStampLabel || supplier?.name || 'HARDLOCK Industry Co., Ltd.';
+  const canMutateRows = Boolean(onUpdateItem || onDeleteItem);
 
   return (
-    <div className="space-y-3 text-[11px] leading-[1.42] text-black">
+    <div className="space-y-3 text-black">
       {/* Running Header matching Reference Contract */}
-      <div className="flex justify-end pb-1 border-b border-black text-[10.5px] font-semibold">
+      <div className="flex justify-end pb-1 border-b border-black font-semibold">
         <span>
           CONTRACT No.{' '}
           <EditableText
@@ -2021,11 +3537,11 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
 
       {/* Bilingual Title */}
       <div className="pt-2 text-center space-y-0.5">
-        <div className="text-[20px] font-bold tracking-[0.35em]">合 同</div>
-        <div className="text-[19px] font-bold tracking-[0.22em]">CONTRACT</div>
+        <div className="doc-title font-bold tracking-[0.35em]">合 同</div>
+        <div className="doc-title font-bold tracking-[0.22em]">CONTRACT</div>
       </div>
 
-      <div className="flex justify-end text-[11px]">
+      <div className="flex justify-end">
         <div className="space-y-0.5 min-w-[200px]">
           <div>
             编 号 NO. :{' '}
@@ -2049,7 +3565,7 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
       </div>
 
       {/* Buyers & Sellers Blocks */}
-      <div className="space-y-2.5 pt-1 text-[10.5px]">
+      <div className="space-y-2.5 pt-1">
         <div className="space-y-0.5">
           <div>
             买 方 THE BUYERS :{' '}
@@ -2145,7 +3661,7 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
       </div>
 
       {/* Preamble */}
-      <div className="pt-1 text-[10.5px] leading-snug">
+      <div className="pt-1 leading-snug">
         <div>
           <EditableText
             order={order}
@@ -2167,56 +3683,55 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
 
       {/* Bilingual Commodity Table */}
       <div className="overflow-x-auto pt-1">
-        <table className="w-full border-collapse text-[10.5px] tabular-nums">
+        <table className="w-full border-collapse doc-table tabular-nums">
           <thead>
             <tr className="text-center font-semibold bg-white">
-              <th className="border border-black px-1.5 py-1 w-12 leading-tight">
+              <th className="border border-black w-12 leading-tight">
                 项目
                 <br />
                 ITEM
                 <br />
                 NO.
               </th>
-              <th
-                colSpan={3}
-                className="border border-black px-2 py-1 leading-tight"
-              >
+              <th colSpan={3} className="border border-black leading-tight">
                 商品名称及规格
                 <br />
                 NAME OF COMMODITY &amp; SPECIFICATION
               </th>
-              <th className="border border-black px-1.5 py-1 w-16 leading-tight">
+              <th className="border border-black w-16 leading-tight">
                 数量
                 <br />
                 QUANTITY
               </th>
-              <th className="border border-black px-1.5 py-1 w-20 leading-tight">
+              <th className="border border-black w-20 leading-tight">
                 单价
                 <br />
                 UNIT PRICE
               </th>
-              <th className="border border-black px-1.5 py-1 w-24 leading-tight">
+              <th className="border border-black w-24 leading-tight">
                 总价
                 <br />
                 TOTAL PRICE
               </th>
+              {canMutateRows && (
+                <th
+                  rowSpan={2}
+                  className="no-print border border-black w-8 text-center text-[10px] text-slate-500"
+                >
+                  {t.docDeleteRowLabel}
+                </th>
+              )}
             </tr>
             <tr className="text-center font-semibold bg-white">
-              <th className="border border-black px-1 py-0.5" />
-              <th className="border border-black px-1.5 py-0.5">ITEM</th>
-              <th className="border border-black px-1.5 py-0.5">SIZE/PITCH</th>
-              <th className="border border-black px-1.5 py-0.5">
-                MATERIAL / FINISH
-              </th>
-              <th className="border border-black px-1 py-0.5">
+              <th className="border border-black" />
+              <th className="border border-black">ITEM</th>
+              <th className="border border-black">SIZE/PITCH</th>
+              <th className="border border-black">MATERIAL / FINISH</th>
+              <th className="border border-black">
                 {order.items[0]?.unit || 'SET'}
               </th>
-              <th className="border border-black px-1 py-0.5">
-                {order.currency}
-              </th>
-              <th className="border border-black px-1 py-0.5">
-                {order.currency}
-              </th>
+              <th className="border border-black">{order.currency}</th>
+              <th className="border border-black">{order.currency}</th>
             </tr>
           </thead>
           <tbody>
@@ -2232,75 +3747,175 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
               const matFinish = [specs.material, specs.surfaceFinish]
                 .filter(Boolean)
                 .join(' / ');
+              const customPartOverride = order.docOverrides?.[`inv.part.${item.id}`];
+              const shownPartName =
+                customPartOverride !== undefined
+                  ? customPartOverride
+                  : partDisplay.partName;
               return (
-                <tr key={item.id}>
-                  <td className="border border-black px-1 py-1 text-center">
+                <tr key={item.id} data-testid={`ct-row-${idx}`}>
+                  <td className="border border-black text-center">
                     {idx + 1}.
                   </td>
-                  <td className="border border-black px-1.5 py-1 font-semibold">
-                    <div className="leading-tight">{partDisplay.partName}</div>
-                    {partDisplay.sku &&
-                      partDisplay.partName !== partDisplay.sku && (
-                        <div className="text-[9px] font-normal text-slate-600 leading-tight whitespace-nowrap">
-                          {partDisplay.sku}
+                  <td className="border border-black font-semibold">
+                    <div className="leading-tight">
+                      <EditableText
+                        order={order}
+                        fieldKey={`ct.item.${idx}.partName`}
+                        fallback={shownPartName}
+                        directValue={shownPartName}
+                        onDirectCommit={
+                          onUpdateItem
+                            ? (val) =>
+                                onUpdateItem(
+                                  item.id,
+                                  { description: val },
+                                  partDisplay.hasCustomPartName ? val : undefined,
+                                )
+                            : undefined
+                        }
+                      />
+                    </div>
+                    {(partDisplay.sku || onUpdateItem) &&
+                      shownPartName !== partDisplay.sku && (
+                        <div className="doc-small-sub font-normal text-slate-600 leading-tight whitespace-nowrap">
+                          <EditableText
+                            order={order}
+                            fieldKey={`ct.item.${idx}.sku`}
+                            fallback={item.sku}
+                            directValue={item.sku}
+                            onDirectCommit={
+                              onUpdateItem
+                                ? (val) => onUpdateItem(item.id, { sku: val })
+                                : undefined
+                            }
+                          />
                         </div>
                       )}
                   </td>
-                  <td className="border border-black px-1.5 py-1 text-center whitespace-nowrap">
-                    {specs.size || '—'}
+                  <td className="border border-black text-center whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`ct.item.${idx}.size`}
+                      fallback={specs.size || '—'}
+                      directValue={specs.size || '—'}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => onUpdateItem(item.id, { size: val })
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-1 text-center whitespace-nowrap">
-                    {matFinish || '—'}
+                  <td className="border border-black text-center whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`ct.item.${idx}.matFinish`}
+                      fallback={matFinish || '—'}
+                      directValue={matFinish || '—'}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => {
+                              const [m, f] = val.split('/').map((s) => s.trim());
+                              onUpdateItem(item.id, {
+                                material: m ?? val,
+                                ...(f !== undefined ? { surfaceFinish: f } : {}),
+                              });
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-1 text-right whitespace-nowrap">
-                    {item.quantity.toLocaleString()}
+                  <td className="border border-black text-right whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`ct.item.${idx}.qty`}
+                      fallback={item.quantity.toLocaleString()}
+                      directValue={item.quantity.toLocaleString()}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null) {
+                                onUpdateItem(item.id, { quantity: parsed });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-1 text-right whitespace-nowrap">
-                    {formatDocMoney(item.unitPrice, order.currency)}
+                  <td className="border border-black text-right whitespace-nowrap">
+                    <EditableText
+                      order={order}
+                      fieldKey={`ct.item.${idx}.unitPrice`}
+                      fallback={formatDocMoney(item.unitPrice, order.currency)}
+                      directValue={formatDocMoney(item.unitPrice, order.currency)}
+                      onDirectCommit={
+                        onUpdateItem
+                          ? (val) => {
+                              const parsed = parseDocNumber(val);
+                              if (parsed !== null) {
+                                onUpdateItem(item.id, { unitPrice: parsed });
+                              }
+                            }
+                          : undefined
+                      }
+                    />
                   </td>
-                  <td className="border border-black px-1.5 py-1 text-right whitespace-nowrap">
+                  <td className="border border-black text-right whitespace-nowrap">
                     {formatDocMoney(calc?.amount ?? 0, order.currency)}
                   </td>
+                  {canMutateRows && (
+                    <td className="no-print border border-black text-center">
+                      {onDeleteItem && (
+                        <button
+                          type="button"
+                          data-testid={`ct-delete-row-${idx}`}
+                          title={t.docDeleteRowLabel}
+                          aria-label={t.docDeleteRowLabel}
+                          onClick={() => onDeleteItem(item.id)}
+                          className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
             <tr className="font-bold">
-              <td
-                colSpan={6}
-                className="border border-black px-2 py-1 text-right"
-              >
+              <td colSpan={6} className="border border-black text-right">
                 Ex-works Total
               </td>
-              <td className="border border-black px-1.5 py-1 text-right whitespace-nowrap">
+              <td className="border border-black text-right whitespace-nowrap">
                 {formatDocMoney(summary.exwTotal, order.currency)}
               </td>
+              {canMutateRows && <td className="no-print border border-black" />}
             </tr>
             {freightTotal > 0 && (
               <tr className="font-bold">
-                <td
-                  colSpan={6}
-                  className="border border-black px-2 py-1 text-right"
-                >
+                <td colSpan={6} className="border border-black text-right">
                   {getModeFreightLabel(order.shipping.mode)}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-right whitespace-nowrap">
+                <td className="border border-black text-right whitespace-nowrap">
                   {formatDocMoney(freightTotal, order.currency)}
                 </td>
+                {canMutateRows && (
+                  <td className="no-print border border-black" />
+                )}
               </tr>
             )}
             <tr className="font-bold">
-              <td
-                colSpan={6}
-                className="border border-black px-2 py-1 text-right"
-              >
+              <td colSpan={6} className="border border-black text-right">
                 {order.shipping.incoterm} {placeShort}
               </td>
-              <td className="border border-black px-1.5 py-1 text-right whitespace-nowrap">
+              <td className="border border-black text-right whitespace-nowrap">
                 {formatDocMoney(summary.incotermTotal, order.currency)}
               </td>
+              {canMutateRows && <td className="no-print border border-black" />}
             </tr>
             <tr>
-              <td colSpan={7} className="border border-black px-2 py-1">
+              <td colSpan={canMutateRows ? 8 : 7} className="border border-black">
                 总 价 TOTAL VALUE :{' '}
                 <span className="font-bold">
                   <EditableText
@@ -2314,10 +3929,47 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
             </tr>
           </tbody>
         </table>
+
+        {(onAddBlankItem || onAddItemFromProduct) && (
+          <div className="no-print mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {onAddBlankItem && (
+              <button
+                type="button"
+                data-testid="ct-add-blank-row-btn"
+                onClick={onAddBlankItem}
+                className="inline-flex items-center gap-1 px-2.5 py-1 font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t.docAddBlankRow}</span>
+              </button>
+            )}
+            {onAddItemFromProduct && products.length > 0 && (
+              <select
+                data-testid="ct-add-product-select"
+                defaultValue=""
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) {
+                    onAddItemFromProduct(val);
+                    e.target.value = '';
+                  }
+                }}
+                className="h-7 px-2 text-xs bg-white border border-slate-300 rounded text-slate-700"
+              >
+                <option value="">{t.docAddProductFromCatalog}</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.sku} · {p.nameEn}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Numbered Bilingual Terms & Conditions */}
-      <div className="pt-2 space-y-2.5 text-[10.5px] leading-[1.42]">
+      <div className="pt-2 space-y-2.5">
         {settings.clauses.map((clause) => {
           const zhFallback = interpolateContractText(
             clause.bodyZh,
@@ -2372,7 +4024,7 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
       </div>
 
       {/* Dual Buyer / Seller Signature Block */}
-      <div className="pt-6 grid grid-cols-2 gap-10 print-avoid-break text-[10.5px]">
+      <div className="pt-6 grid grid-cols-2 gap-10 print-avoid-break">
         <div className="space-y-1.5">
           <div>买方 : THE BUYER:</div>
           <div className="font-bold uppercase">
@@ -2492,23 +4144,40 @@ const CaseMarkSheet: React.FC<
   <div className="space-y-6">
     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b-2 border-slate-900">
       <div className="min-w-0">
-        <div className="text-xl font-bold tracking-tight text-slate-900">
-          {supplier?.name ?? 'HARDLOCK Industry Co., Ltd.'}
+        <div className="doc-company-title font-bold tracking-tight text-slate-900">
+          <EditableText
+            order={order}
+            fieldKey="inv.supplierName"
+            fallback={supplier?.name ?? 'HARDLOCK Industry Co., Ltd.'}
+            onCommit={onCommitOverride}
+          />
         </div>
-        <div className="text-xs text-slate-600 mt-1 max-w-md whitespace-pre-line">
-          {supplier?.address}
+        <div className="text-slate-600 mt-1 max-w-md whitespace-pre-line">
+          <EditableText
+            order={order}
+            fieldKey="inv.supplierAddress"
+            fallback={supplier?.address || ''}
+            onCommit={onCommitOverride}
+            multiline
+          />
         </div>
-        <div className="text-xs text-slate-600 mt-0.5 font-mono-tabular">
-          TEL: {supplier?.phone}{' '}
+        <div className="text-slate-600 mt-0.5 font-mono-tabular">
+          TEL:{' '}
+          <EditableText
+            order={order}
+            fieldKey="inv.supplierTel"
+            fallback={supplier?.phone || ''}
+            onCommit={onCommitOverride}
+          />{' '}
           {supplier?.fax ? `· FAX: ${supplier.fax}` : ''} · ID:{' '}
           {supplier?.taxOrExporterId}
         </div>
       </div>
       <div className="sm:text-right shrink-0">
-        <div className="text-lg font-bold tracking-wide text-slate-900 whitespace-nowrap">
+        <div className="doc-title font-bold tracking-wide text-slate-900 whitespace-nowrap">
           {d.caseMarkSheet}
         </div>
-        <div className="text-[11px] font-mono-tabular text-slate-500 mt-1 whitespace-nowrap">
+        <div className="font-mono-tabular text-slate-500 mt-1 whitespace-nowrap">
           HARDLOCK STANDARD EXPORT FORMAT
         </div>
       </div>
@@ -2530,15 +4199,27 @@ const CaseMarkSheet: React.FC<
             />
           </div>
           <div className="text-sm font-semibold text-slate-700 mt-1">
-            {customer?.name}
+            <EditableText
+              order={order}
+              fieldKey="inv.shipToName"
+              fallback={customer?.name || ''}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
         <div className="text-right font-mono-tabular">
           <div className="text-xs text-slate-500">{d.caseNo}</div>
           <div className="text-2xl font-bold text-slate-900">
-            {order.shipping.caseNumberPrefix
-              ? `${order.shipping.caseNumberPrefix}-1 ~ ${summary.totalCartons}`
-              : `1 ~ ${summary.totalCartons}`}
+            <EditableText
+              order={order}
+              fieldKey="cm.caseRangeHeader"
+              fallback={
+                order.shipping.caseNumberPrefix
+                  ? `${order.shipping.caseNumberPrefix}-1 ~ ${summary.totalCartons}`
+                  : `1 ~ ${summary.totalCartons}`
+              }
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
       </div>
@@ -2549,7 +4230,12 @@ const CaseMarkSheet: React.FC<
             {d.destination}
           </div>
           <div className="font-bold text-slate-900 mt-0.5">
-            {order.shipping.portOfDischarge}
+            <EditableText
+              order={order}
+              fieldKey="inv.portOfDischarge"
+              fallback={order.shipping.portOfDischarge}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
         <div>
@@ -2557,7 +4243,12 @@ const CaseMarkSheet: React.FC<
             {d.poNo}
           </div>
           <div className="font-mono-tabular font-bold text-slate-900 mt-0.5">
-            {order.poNo}
+            <EditableText
+              order={order}
+              fieldKey="cm.poNo"
+              fallback={order.poNo}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
         <div>
@@ -2565,7 +4256,12 @@ const CaseMarkSheet: React.FC<
             {d.invoiceNo}
           </div>
           <div className="font-mono-tabular font-bold text-slate-900 mt-0.5">
-            {order.invoiceNo}
+            <EditableText
+              order={order}
+              fieldKey="inv.invoiceNo"
+              fallback={order.invoiceNo}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
         <div>
@@ -2573,7 +4269,12 @@ const CaseMarkSheet: React.FC<
             {d.netWeight}
           </div>
           <div className="font-mono-tabular font-bold text-slate-900 mt-0.5">
-            {formatWeight1(summary.totalNetWeightKg)} kg
+            <EditableText
+              order={order}
+              fieldKey="cm.nw"
+              fallback={`${formatWeight1(summary.totalNetWeightKg)} kg`}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
         <div>
@@ -2581,7 +4282,12 @@ const CaseMarkSheet: React.FC<
             {d.grossWeight}
           </div>
           <div className="font-mono-tabular font-bold text-slate-900 mt-0.5">
-            {formatWeight1(summary.totalGrossWeightKg)} kg
+            <EditableText
+              order={order}
+              fieldKey="cm.gw"
+              fallback={`${formatWeight1(summary.totalGrossWeightKg)} kg`}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
         <div>
@@ -2589,13 +4295,18 @@ const CaseMarkSheet: React.FC<
             {d.measurement}
           </div>
           <div className="font-mono-tabular font-bold text-slate-900 mt-0.5">
-            {formatNumberNoRound(summary.totalCbm, 3)} m³
+            <EditableText
+              order={order}
+              fieldKey="cm.cbm"
+              fallback={`${formatNumberNoRound(summary.totalCbm, 3)} m³`}
+              onCommit={onCommitOverride}
+            />
           </div>
         </div>
       </div>
 
       <div className="border-t border-slate-300 pt-3">
-        <table className="w-full text-xs border-collapse">
+        <table className="w-full doc-table border-collapse">
           <thead>
             <tr className="border-b border-slate-300 text-slate-600">
               <th className="py-1.5 text-left">{d.caseNo}</th>
@@ -2627,8 +4338,14 @@ const CaseMarkSheet: React.FC<
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-t-2 border-slate-900 pt-4">
         <div className="text-sm font-bold tracking-wider uppercase text-slate-900">
-          {d.madeIn}{' '}
-          {order.items[0]?.originCountry || supplier?.country || 'JAPAN'}
+          <EditableText
+            order={order}
+            fieldKey="cm.madeIn"
+            fallback={`${d.madeIn} ${
+              order.items[0]?.originCountry || supplier?.country || 'JAPAN'
+            }`}
+            onCommit={onCommitOverride}
+          />
         </div>
         <div className="flex items-center gap-4 text-slate-800">
           <span className="inline-flex items-center gap-1 text-xs font-semibold">

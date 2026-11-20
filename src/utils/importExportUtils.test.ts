@@ -616,7 +616,12 @@ test('customer-specific part name (customDescription) populates order items and 
   assert.ok(docXml.includes('CUSTOMER-VIP LOCK NUT SPEC A'));
 });
 
-import { sanitizeOrderPayload, sanitizePriceTiers } from './firestoreSanitizers';
+import {
+  sanitizeDocSpecialFields,
+  sanitizeOrderPayload,
+  sanitizePackingRow,
+  sanitizePriceTiers,
+} from './firestoreSanitizers';
 
 test('no-rounding: pricing, product import, formal Excel numFmt, and Firestore sanitizers preserve exact decimal inputs', () => {
   const seed = createInitialErpState();
@@ -717,6 +722,108 @@ test('no-rounding: pricing, product import, formal Excel numFmt, and Firestore s
   assert.equal(cleanOrder.items[0].unitPrice, 333.4);
   assert.equal(cleanOrder.palletCount, 1.5);
 });
+
+test('docStyle typography, hiddenSections, inline overrides, and packing row partName propagate across sanitizers, Excel, and Word', async () => {
+  const seed = createInitialErpState();
+  const baseOrder = seed.orders[0];
+
+  const sanitizedSpecial = sanitizeDocSpecialFields({
+    showCompanyStamp: false,
+    showSignature: true,
+    showDisclaimer: false,
+    disclaimerText: '',
+    customNote: '',
+    docStyle: {
+      fontFamily: 'arial',
+      baseFontSizePx: 14,
+      tableFontSizePx: 12.5,
+      titleFontSizePx: 22,
+      lineHeight: 1.6,
+      cellDensity: 'relaxed',
+      boldBody: true,
+    },
+    hiddenSections: ['inv.bankInfo', 'inv.remarks', 'pl.footnotes'],
+  });
+  assert.ok(sanitizedSpecial);
+  assert.ok(
+    Object.keys(sanitizedSpecial).length <= 10,
+    'docSpecialFields must stay within <= 10 keys for firestore.rules',
+  );
+  assert.equal(sanitizedSpecial.docStyle?.fontFamily, 'arial');
+  assert.equal(sanitizedSpecial.docStyle?.baseFontSizePx, 14);
+  assert.equal(sanitizedSpecial.docStyle?.boldBody, true);
+  assert.deepEqual(sanitizedSpecial.hiddenSections, [
+    'inv.bankInfo',
+    'inv.remarks',
+    'pl.footnotes',
+  ]);
+
+  const sanitizedPack = sanitizePackingRow(
+    {
+      id: 'pk-1',
+      palletNo: '1-10',
+      ctnNo: '1-5',
+      itemNo: 1,
+      partName: 'CUSTOM PACK PART',
+      type: 'HLN-R10C-4CR',
+      size: 'M10x1.5',
+      material: 'SS400',
+      surfaceFinish: 'CR3',
+      setsPerCarton: 300,
+      cartonCount: 5,
+      sharedCarton: false,
+      qty: 1500,
+      unitWeightKg: 0.025,
+      totalWeightKg: 37.5,
+    },
+    0,
+  );
+  assert.equal(sanitizedPack.partName, 'CUSTOM PACK PART');
+
+  const styledOrder = {
+    ...baseOrder,
+    remarks: 'SECRET INTERNAL REMARK',
+    docOverrides: {
+      'inv.title': 'PROFORMA INVOICE',
+      [`inv.part.${baseOrder.items[0].id}`]: 'CUSTOM EDITED PART TITLE',
+    },
+    docSpecialFields: sanitizedSpecial,
+  };
+  const customer = seed.customers.find((c) => c.id === styledOrder.customerId)!;
+  const supplier = seed.suppliers.find((s) => s.id === styledOrder.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === styledOrder.bankAccountId)!;
+
+  const wb = buildFormalDocumentWorkbook(styledOrder, {
+    customer,
+    billToCustomer: customer,
+    supplier,
+    bank,
+    products: seed.products,
+    docLang: 'en',
+  });
+  const invSheet = wb.Sheets['INVOICE'];
+  assert.equal(invSheet['A1']?.s?.font?.name, 'Arial');
+  assert.ok((invSheet['A1']?.s?.font?.sz ?? 0) > 18);
+
+  const invCsv = XLSX.utils.sheet_to_csv(invSheet);
+  assert.match(invCsv, /PROFORMA INVOICE/);
+  assert.match(invCsv, /CUSTOM EDITED PART TITLE/);
+  assert.doesNotMatch(invCsv, /Bank Information/);
+  assert.doesNotMatch(invCsv, /SECRET INTERNAL REMARK/);
+
+  const docxBytes = await buildContractDocxBuffer(styledOrder, {
+    customer,
+    billToCustomer: customer,
+    supplier,
+    products: seed.products,
+    docLang: 'en',
+    contractSettings: createDefaultContractSettings(),
+  });
+  const docXml = new PizZip(docxBytes).file('word/document.xml')?.asText() ?? '';
+  assert.ok(docXml.includes('Arial'));
+  assert.ok(docXml.includes('CUSTOM EDITED PART TITLE'));
+});
+
 
 
 

@@ -368,9 +368,9 @@ test('DocumentGenerator renders optional Fax, Tax ID, and non-JPY Exchange Rate 
       t={UI_TEXT.zh}
     />,
   );
-  assert.match(html, /Fax : 03-5555-6666/);
-  assert.match(html, /Tax ID : TAX-999-001/);
-  assert.match(html, /\*Exchange Rate : 1 USD = 155 JPY/);
+  assert.match(html, /Fax :[\s\S]*03-5555-6666/);
+  assert.match(html, /Tax ID :[\s\S]*TAX-999-001/);
+  assert.match(html, /\*Exchange Rate :[\s\S]*1 USD = 155 JPY/);
 });
 
 test('DocumentGenerator renders Contract/PI sheet, WYSIWYG editable fields, special field controls, and customer template export button', () => {
@@ -756,6 +756,117 @@ test('OrderWorkspace renders 1, 2, 3... sequence numbers with draggable handles 
   assert.match(html, /data-testid="item-move-up-0"[^>]*disabled/);
   assert.match(html, /data-testid="item-move-down-0"/);
 });
+
+test('DocumentGenerator renders typography controls, applies docStyle CSS vars to all sheets, and renders inline add/delete row and section restore controls', () => {
+  const seed = createInitialErpState();
+  const baseOrder = seed.orders[0];
+  const order = {
+    ...baseOrder,
+    docSpecialFields: {
+      showCompanyStamp: false,
+      showSignature: true,
+      showDisclaimer: false,
+      disclaimerText: '',
+      customNote: '',
+      docStyle: {
+        fontFamily: 'arial' as const,
+        baseFontSizePx: 13,
+        tableFontSizePx: 12,
+        titleFontSizePx: 22,
+        lineHeight: 1.5,
+        cellDensity: 'relaxed' as const,
+        boldBody: true,
+      },
+      hiddenSections: ['inv.bankInfo'],
+    },
+  };
+  const customer = seed.customers.find((c) => c.id === order.customerId)!;
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  const invHtml = renderToStaticMarkup(
+    <DocumentGenerator
+      order={order}
+      customer={customer}
+      billToCustomer={customer}
+      supplier={supplier}
+      bank={bank}
+      logistics={seed.logisticsProviders[0]}
+      products={seed.products}
+      docLang="en"
+      initialDocTab="invoice"
+      contractSettings={createDefaultContractSettings()}
+      onChangeOrder={() => {}}
+      onChangeDocLang={() => {}}
+      onCreateNewOrder={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(invHtml, /data-testid="quick-font-family-select"/);
+  assert.match(invHtml, /data-testid="quick-font-size-dec"/);
+  assert.match(invHtml, /data-testid="quick-font-size-inc"/);
+  assert.match(invHtml, /data-testid="toggle-typography-panel-btn"/);
+  assert.match(invHtml, /data-testid="restore-hidden-sections-btn"/);
+  assert.match(invHtml, /data-testid="sheet-invoice"/);
+  assert.match(invHtml, /--doc-base-size:13px/);
+  assert.match(invHtml, /--doc-table-size:12px/);
+  assert.match(invHtml, /--doc-title-size:22px/);
+  assert.match(invHtml, /--doc-cell-px:10px/);
+  assert.match(invHtml, /--doc-body-weight:600/);
+  assert.match(invHtml, /data-testid="inv-add-blank-row-btn"/);
+  assert.match(invHtml, /data-testid="inv-add-product-select"/);
+  assert.match(invHtml, /data-testid="inv-delete-row-0"/);
+  // Hidden inv.bankInfo section should not render Bank Information heading
+  assert.doesNotMatch(invHtml, />Bank Information</);
+
+  const plHtml = renderToStaticMarkup(
+    <DocumentGenerator
+      order={order}
+      customer={customer}
+      billToCustomer={customer}
+      supplier={supplier}
+      bank={bank}
+      logistics={seed.logisticsProviders[0]}
+      products={seed.products}
+      docLang="en"
+      initialDocTab="packing"
+      contractSettings={createDefaultContractSettings()}
+      onChangeOrder={() => {}}
+      onChangeDocLang={() => {}}
+      onCreateNewOrder={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(plHtml, /data-testid="sheet-packing-list"/);
+  assert.match(plHtml, /--doc-base-size:13px/);
+  assert.match(plHtml, /data-testid="pl-add-row-btn"/);
+  assert.match(plHtml, /data-testid="pl-delete-row-0"/);
+
+  const ctHtml = renderToStaticMarkup(
+    <DocumentGenerator
+      order={order}
+      customer={customer}
+      billToCustomer={customer}
+      supplier={supplier}
+      bank={bank}
+      logistics={seed.logisticsProviders[0]}
+      products={seed.products}
+      docLang="en"
+      initialDocTab="contract"
+      contractSettings={createDefaultContractSettings()}
+      onChangeOrder={() => {}}
+      onChangeDocLang={() => {}}
+      onCreateNewOrder={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(ctHtml, /data-testid="sheet-contract"/);
+  assert.match(ctHtml, /--doc-base-size:13px/);
+  assert.match(ctHtml, /data-testid="ct-add-blank-row-btn"/);
+  assert.match(ctHtml, /data-testid="ct-add-product-select"/);
+  assert.match(ctHtml, /data-testid="ct-delete-row-0"/);
+});
+
 
 
 
