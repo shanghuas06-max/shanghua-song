@@ -653,5 +653,81 @@ test('OrderWorkspace renders half-carton controls & savings hint, SystemSettings
   assert.match(packingHtml, /data-testid="uploaded-signature-img"/);
 });
 
+test('TopHeader renders clickable breadcrumb navigation and customer part names appear in OrderWorkspace and DocumentGenerator sheets', () => {
+  const headerHtml = renderToStaticMarkup(
+    <TopHeader
+      activeSection="order"
+      activeInvoiceNo="H251699"
+      hasActiveOrder={true}
+      onNavigate={() => {}}
+      onOpenMobileNav={() => {}}
+      onCreateNewOrder={() => {}}
+      onSaveOrder={() => {}}
+      onGoToPrint={() => {}}
+      t={UI_TEXT.ja}
+      saveFeedback={null}
+    />,
+  );
+  assert.match(headerHtml, /<button[^>]*data-testid="breadcrumb-root"[^>]*>HARDLOCK<\/button>/);
+  assert.match(headerHtml, /<button[^>]*data-testid="breadcrumb-section"[^>]*>受注・自動見積計算<\/button>/);
+  assert.match(headerHtml, /<button[^>]*data-testid="breadcrumb-order"[^>]*>H251699<\/button>/);
+
+  const seed = createInitialErpState();
+  const order = seed.orders[0];
+  const custWithPartName = {
+    ...seed.customers.find((c) => c.id === order.customerId)!,
+    customPrices: [
+      {
+        productId: order.items[0].productId,
+        unitPrice: 9.99,
+        customDescription: 'SPECIAL BUYER PART M12',
+      },
+    ],
+  };
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  const wsHtml = renderToStaticMarkup(
+    <OrderWorkspace
+      order={order}
+      customers={[custWithPartName]}
+      suppliers={seed.suppliers}
+      logisticsProviders={seed.logisticsProviders}
+      bankAccounts={seed.bankAccounts}
+      products={seed.products}
+      onChangeOrder={() => {}}
+      onCreateNewOrder={() => {}}
+      onDuplicateOrder={() => {}}
+      onOpenDocuments={() => {}}
+      onOpenHistory={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(wsHtml, /data-testid="custom-part-name-badge-0"/);
+  assert.match(wsHtml, /SPECIAL BUYER PART M12/);
+
+  for (const tab of ['invoice', 'packing', 'contract'] as const) {
+    const docHtml = renderToStaticMarkup(
+      <DocumentGenerator
+        order={order}
+        customer={custWithPartName}
+        billToCustomer={custWithPartName}
+        supplier={supplier}
+        bank={bank}
+        logistics={seed.logisticsProviders[0]}
+        products={seed.products}
+        docLang="en"
+        initialDocTab={tab}
+        contractSettings={createDefaultContractSettings()}
+        onChangeOrder={() => {}}
+        onChangeDocLang={() => {}}
+        onCreateNewOrder={() => {}}
+        t={UI_TEXT.zh}
+      />,
+    );
+    assert.match(docHtml, /SPECIAL BUYER PART M12/, `Expected custom part name on ${tab} sheet`);
+  }
+});
+
 
 

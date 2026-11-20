@@ -82,7 +82,7 @@
         "defaultCurrency": { "type": "string", "enum": ["USD", "JPY", "EUR", "CNY"] },
         "defaultIncoterm": { "type": "string", "enum": ["EXW", "FCA", "FOB", "CFR", "CIF", "CPT", "CIP", "DAP", "DPU", "DDP"] },
         "notifyParty": { "type": "string", "minLength": 0, "maxLength": 1000 },
-        "customPrices": { "type": "array", "description": "Customer-specific product prices & optional quantity tiers keyed by productId (max 100)." },
+        "customPrices": { "type": "array", "description": "Customer-specific product mappings (customDescription, unitPrice & optional quantity tiers) keyed by productId (max 100)." },
         "documentTemplates": { "type": "array", "description": "Customer-uploaded .xlsx/.docx templates with cell/tag mappings (max 3)." },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }

@@ -84,8 +84,12 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
   const [search, setSearch] = useState('');
 
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [customerModalTab, setCustomerModalTab] = useState<
+    'basic' | 'products' | 'templates'
+  >('basic');
   const [customPriceProductId, setCustomPriceProductId] = useState<string>('');
   const [customPriceValue, setCustomPriceValue] = useState<number>(0);
+  const [customPartNameValue, setCustomPartNameValue] = useState<string>('');
 
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [editingLogistics, setEditingLogistics] =
@@ -186,10 +190,12 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
     const existingForFirst = (cust.customPrices ?? []).find(
       (cp) => cp.productId === firstProd?.id,
     );
+    setCustomerModalTab('basic');
     setCustomPriceProductId(firstProd?.id ?? '');
     setCustomPriceValue(
       existingForFirst?.unitPrice ?? firstProd?.unitPrice ?? 0,
     );
+    setCustomPartNameValue(existingForFirst?.customDescription ?? '');
     setTemplateUploadError(null);
     setEditingCustomer({
       ...cust,
@@ -322,17 +328,27 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
   const handleUpsertCustomerCustomPrice = () => {
     if (!editingCustomer || !customPriceProductId) return;
     const price = Math.max(0, Number(customPriceValue) || 0);
+    const trimmedPartName = customPartNameValue.trim();
     const current = editingCustomer.customPrices ?? [];
     const exists = current.some((cp) => cp.productId === customPriceProductId);
     const next: CustomerProductPrice[] = exists
       ? current.map((cp) =>
           cp.productId === customPriceProductId
-            ? { ...cp, unitPrice: price }
+            ? {
+                ...cp,
+                unitPrice: price,
+                customDescription: trimmedPartName || undefined,
+              }
             : cp,
         )
       : [
           ...current,
-          { productId: customPriceProductId, unitPrice: price, tieredPrices: [] },
+          {
+            productId: customPriceProductId,
+            unitPrice: price,
+            ...(trimmedPartName ? { customDescription: trimmedPartName } : {}),
+            tieredPrices: [],
+          },
         ];
     setEditingCustomer({ ...editingCustomer, customPrices: next });
   };
@@ -826,539 +842,666 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (!editingCustomer.name.trim()) return;
+              if (!editingCustomer.name.trim()) {
+                setCustomerModalTab('basic');
+                return;
+              }
               onSaveCustomer(editingCustomer);
               setEditingCustomer(null);
             }}
-            className="space-y-3"
+            className="space-y-4"
           >
-            <div className="grid grid-cols-2 gap-3">
-              <FieldInput
-                id="cust-code"
-                label={t.colCode}
-                value={editingCustomer.code}
-                onChange={(v) =>
-                  setEditingCustomer({ ...editingCustomer, code: v })
-                }
-                required
-              />
-              <FieldInput
-                id="cust-country"
-                label={t.colCountry}
-                value={editingCustomer.country}
-                onChange={(v) =>
-                  setEditingCustomer({ ...editingCustomer, country: v })
-                }
-                required
-              />
+            {/* Customer Editor Section Tabs */}
+            <div
+              role="tablist"
+              aria-label={editingCustomer.name || t.masterCustomers}
+              className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-md"
+            >
+              <button
+                type="button"
+                role="tab"
+                data-testid="cust-modal-tab-basic"
+                aria-selected={customerModalTab === 'basic'}
+                onClick={() => setCustomerModalTab('basic')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                  customerModalTab === 'basic'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t.custModalTabBasic}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-testid="cust-modal-tab-products"
+                aria-selected={customerModalTab === 'products'}
+                onClick={() => setCustomerModalTab('products')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                  customerModalTab === 'products'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>{t.custModalTabProducts}</span>
+                <span className="font-mono-tabular text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 rounded">
+                  {(editingCustomer.customPrices ?? []).length}
+                </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-testid="cust-modal-tab-templates"
+                aria-selected={customerModalTab === 'templates'}
+                onClick={() => setCustomerModalTab('templates')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                  customerModalTab === 'templates'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>{t.custModalTabTemplates}</span>
+                <span className="font-mono-tabular text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 rounded">
+                  {(editingCustomer.documentTemplates ?? []).length}
+                </span>
+              </button>
             </div>
-            <FieldInput
-              id="cust-name"
-              label={t.lblCompanyName}
-              value={editingCustomer.name}
-              onChange={(v) =>
-                setEditingCustomer({ ...editingCustomer, name: v })
-              }
-              required
-            />
-            <FieldInput
-              id="cust-address"
-              label={t.lblAddress}
-              value={editingCustomer.address}
-              onChange={(v) =>
-                setEditingCustomer({ ...editingCustomer, address: v })
-              }
-              required
-            />
-            <div className="grid grid-cols-3 gap-3">
-              <FieldInput
-                id="cust-contact"
-                label={t.colContact}
-                value={editingCustomer.contactName}
-                onChange={(v) =>
-                  setEditingCustomer({ ...editingCustomer, contactName: v })
-                }
-              />
-              <FieldInput
-                id="cust-email"
-                label={t.lblEmail}
-                value={editingCustomer.email}
-                onChange={(v) =>
-                  setEditingCustomer({ ...editingCustomer, email: v })
-                }
-              />
-              <FieldInput
-                id="cust-phone"
-                label={t.lblPhone}
-                value={editingCustomer.phone}
-                onChange={(v) =>
-                  setEditingCustomer({ ...editingCustomer, phone: v })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <FieldInput
-                id="cust-fax"
-                label={t.lblFaxOptional}
-                value={editingCustomer.fax ?? ''}
-                onChange={(v) =>
-                  setEditingCustomer({ ...editingCustomer, fax: v })
-                }
-              />
-              <FieldInput
-                id="cust-tax-id"
-                label={t.lblTaxOrIdOptional}
-                value={editingCustomer.taxOrImporterId ?? ''}
-                onChange={(v) =>
-                  setEditingCustomer({ ...editingCustomer, taxOrImporterId: v })
-                }
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label
-                  htmlFor="cust-def-cur"
-                  className="block text-xs font-medium text-slate-700 mb-1"
-                >
-                  {t.lblDefaultCurrency}
-                </label>
-                <select
-                  id="cust-def-cur"
-                  value={editingCustomer.defaultCurrency}
-                  onChange={(e) =>
-                    setEditingCustomer({
-                      ...editingCustomer,
-                      defaultCurrency: e.target.value as CurrencyCode,
-                    })
-                  }
-                  className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md"
-                >
-                  {(['USD', 'JPY', 'EUR', 'CNY'] as CurrencyCode[]).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label
-                  htmlFor="cust-def-term"
-                  className="block text-xs font-medium text-slate-700 mb-1"
-                >
-                  {t.lblDefaultIncoterm}
-                </label>
-                <select
-                  id="cust-def-term"
-                  value={editingCustomer.defaultIncoterm}
-                  onChange={(e) =>
-                    setEditingCustomer({
-                      ...editingCustomer,
-                      defaultIncoterm: e.target.value as IncotermCode,
-                    })
-                  }
-                  className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md"
-                >
-                  {(
-                    [
-                      'EXW',
-                      'FCA',
-                      'FOB',
-                      'CFR',
-                      'CIF',
-                      'CPT',
-                      'CIP',
-                      'DAP',
-                      'DPU',
-                      'DDP',
-                    ] as IncotermCode[]
-                  ).map((term) => (
-                    <option key={term} value={term}>
-                      {term}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {/* Customer-Specific Pricing Section (一客一价) */}
-            <div className="pt-3 border-t border-slate-200 space-y-2.5">
-              <div>
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
-                  <Tag className="w-3.5 h-3.5 text-amber-600" />
-                  <span>{t.customPricingTitle}</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                  {t.customPricingHint}
-                </p>
-              </div>
 
-              {products.length > 0 && (
-                <div className="flex flex-wrap items-end gap-2 bg-slate-50 p-2.5 rounded-md border border-slate-200">
-                  <div className="flex-1 min-w-[180px]">
+            {customerModalTab === 'basic' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <FieldInput
+                    id="cust-code"
+                    label={t.colCode}
+                    value={editingCustomer.code}
+                    onChange={(v) =>
+                      setEditingCustomer({ ...editingCustomer, code: v })
+                    }
+                    required
+                  />
+                  <FieldInput
+                    id="cust-country"
+                    label={t.colCountry}
+                    value={editingCustomer.country}
+                    onChange={(v) =>
+                      setEditingCustomer({ ...editingCustomer, country: v })
+                    }
+                    required
+                  />
+                </div>
+                <FieldInput
+                  id="cust-name"
+                  label={t.lblCompanyName}
+                  value={editingCustomer.name}
+                  onChange={(v) =>
+                    setEditingCustomer({ ...editingCustomer, name: v })
+                  }
+                  required
+                />
+                <FieldInput
+                  id="cust-address"
+                  label={t.lblAddress}
+                  value={editingCustomer.address}
+                  onChange={(v) =>
+                    setEditingCustomer({ ...editingCustomer, address: v })
+                  }
+                  required
+                />
+                <div className="grid grid-cols-3 gap-3">
+                  <FieldInput
+                    id="cust-contact"
+                    label={t.colContact}
+                    value={editingCustomer.contactName}
+                    onChange={(v) =>
+                      setEditingCustomer({ ...editingCustomer, contactName: v })
+                    }
+                  />
+                  <FieldInput
+                    id="cust-email"
+                    label={t.lblEmail}
+                    value={editingCustomer.email}
+                    onChange={(v) =>
+                      setEditingCustomer({ ...editingCustomer, email: v })
+                    }
+                  />
+                  <FieldInput
+                    id="cust-phone"
+                    label={t.lblPhone}
+                    value={editingCustomer.phone}
+                    onChange={(v) =>
+                      setEditingCustomer({ ...editingCustomer, phone: v })
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FieldInput
+                    id="cust-fax"
+                    label={t.lblFaxOptional}
+                    value={editingCustomer.fax ?? ''}
+                    onChange={(v) =>
+                      setEditingCustomer({ ...editingCustomer, fax: v })
+                    }
+                  />
+                  <FieldInput
+                    id="cust-tax-id"
+                    label={t.lblTaxOrIdOptional}
+                    value={editingCustomer.taxOrImporterId ?? ''}
+                    onChange={(v) =>
+                      setEditingCustomer({ ...editingCustomer, taxOrImporterId: v })
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
                     <label
-                      htmlFor="cust-price-product"
-                      className="block text-[11px] font-medium text-slate-600 mb-1"
+                      htmlFor="cust-def-cur"
+                      className="block text-xs font-medium text-slate-700 mb-1"
                     >
-                      {t.customPricingSelectProduct}
+                      {t.lblDefaultCurrency}
                     </label>
                     <select
-                      id="cust-price-product"
-                      value={customPriceProductId}
-                      onChange={(e) => {
-                        const pid = e.target.value;
-                        setCustomPriceProductId(pid);
-                        const existingCp = (
-                          editingCustomer.customPrices ?? []
-                        ).find((cp) => cp.productId === pid);
-                        const prod = products.find((p) => p.id === pid);
-                        setCustomPriceValue(
-                          existingCp?.unitPrice ?? prod?.unitPrice ?? 0,
-                        );
-                      }}
-                      className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded"
+                      id="cust-def-cur"
+                      value={editingCustomer.defaultCurrency}
+                      onChange={(e) =>
+                        setEditingCustomer({
+                          ...editingCustomer,
+                          defaultCurrency: e.target.value as CurrencyCode,
+                        })
+                      }
+                      className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md"
                     >
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.sku} · {p.nameEn} ({t.customPricingBaseLabel}:{' '}
-                          {formatMoney(p.unitPrice, p.currency)})
+                      {(['USD', 'JPY', 'EUR', 'CNY'] as CurrencyCode[]).map((c) => (
+                        <option key={c} value={c}>
+                          {c}
                         </option>
                       ))}
                     </select>
                   </div>
-
-                  <div className="w-28">
+                  <div>
                     <label
-                      htmlFor="cust-price-value"
-                      className="block text-[11px] font-medium text-slate-600 mb-1"
+                      htmlFor="cust-def-term"
+                      className="block text-xs font-medium text-slate-700 mb-1"
                     >
-                      {t.customPricingPriceLabel}
+                      {t.lblDefaultIncoterm}
                     </label>
-                    <input
-                      id="cust-price-value"
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={customPriceValue}
+                    <select
+                      id="cust-def-term"
+                      value={editingCustomer.defaultIncoterm}
                       onChange={(e) =>
-                        setCustomPriceValue(Number(e.target.value) || 0)
+                        setEditingCustomer({
+                          ...editingCustomer,
+                          defaultIncoterm: e.target.value as IncotermCode,
+                        })
                       }
-                      className="w-full h-8 px-2 text-xs text-right font-mono-tabular bg-white border border-slate-300 rounded"
-                    />
+                      className="w-full h-9 px-2.5 text-sm border border-slate-300 rounded-md"
+                    >
+                      {(
+                        [
+                          'EXW',
+                          'FCA',
+                          'FOB',
+                          'CFR',
+                          'CIF',
+                          'CPT',
+                          'CIP',
+                          'DAP',
+                          'DPU',
+                          'DDP',
+                        ] as IncotermCode[]
+                      ).map((term) => (
+                        <option key={term} value={term}>
+                          {term}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={handleUpsertCustomerCustomPrice}
-                    className="h-8 px-3 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 whitespace-nowrap"
-                  >
-                    {t.customPricingAddBtn}
-                  </button>
                 </div>
-              )}
+              </div>
+            )}
 
-              {(editingCustomer.customPrices ?? []).length === 0 ? (
-                <div className="text-[11px] text-slate-400 italic py-1">
-                  {t.customPricingEmpty}
+            {/* Customer-Specific Products: Custom Part Name + Custom Unit Price */}
+            {customerModalTab === 'products' && (
+              <div
+                data-testid="cust-products-panel"
+                className="space-y-3"
+              >
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+                    <Tag className="w-3.5 h-3.5 text-amber-600" />
+                    <span>
+                      {t.custModalTabProducts} · {t.customPricingTitle}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                    {t.customPricingHint}
+                  </p>
                 </div>
-              ) : (
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-md max-h-60 overflow-y-auto">
-                  {(editingCustomer.customPrices ?? []).map((cp) => {
-                    const prod = products.find((p) => p.id === cp.productId);
-                    return (
-                      <div key={cp.productId} className="px-3 py-2 space-y-2 text-xs">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="font-mono-tabular font-semibold text-slate-800 truncate">
-                              {prod?.sku ?? cp.productId}
+
+                {products.length > 0 && (
+                  <div className="space-y-2 bg-slate-50 p-3 rounded-md border border-slate-200">
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="flex-1 min-w-[200px]">
+                        <label
+                          htmlFor="cust-price-product"
+                          className="block text-[11px] font-medium text-slate-600 mb-1"
+                        >
+                          {t.customPricingSelectProduct}
+                        </label>
+                        <select
+                          id="cust-price-product"
+                          value={customPriceProductId}
+                          onChange={(e) => {
+                            const pid = e.target.value;
+                            setCustomPriceProductId(pid);
+                            const existingCp = (
+                              editingCustomer.customPrices ?? []
+                            ).find((cp) => cp.productId === pid);
+                            const prod = products.find((p) => p.id === pid);
+                            setCustomPriceValue(
+                              existingCp?.unitPrice ?? prod?.unitPrice ?? 0,
+                            );
+                            setCustomPartNameValue(
+                              existingCp?.customDescription ?? '',
+                            );
+                          }}
+                          className="w-full h-8 px-2 text-xs bg-white border border-slate-300 rounded"
+                        >
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.sku} · {p.nameEn} ({t.customPricingBaseLabel}:{' '}
+                              {formatMoney(p.unitPrice, p.currency)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="w-32">
+                        <label
+                          htmlFor="cust-price-value"
+                          className="block text-[11px] font-medium text-slate-600 mb-1"
+                        >
+                          {t.customPricingPriceLabel}
+                        </label>
+                        <input
+                          id="cust-price-value"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={customPriceValue}
+                          onChange={(e) =>
+                            setCustomPriceValue(Number(e.target.value) || 0)
+                          }
+                          className="w-full h-8 px-2 text-xs text-right font-mono-tabular bg-white border border-slate-300 rounded"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="flex-1 min-w-[220px]">
+                        <label
+                          htmlFor="cust-custom-part-name"
+                          className="block text-[11px] font-medium text-slate-600 mb-1"
+                        >
+                          {t.customPartNameLabel}
+                        </label>
+                        <input
+                          id="cust-custom-part-name"
+                          type="text"
+                          value={customPartNameValue}
+                          onChange={(e) => setCustomPartNameValue(e.target.value)}
+                          placeholder={t.customPartNamePlaceholder}
+                          className="w-full h-8 px-2.5 text-xs bg-white border border-slate-300 rounded"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleUpsertCustomerCustomPrice}
+                        className="h-8 px-3.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 whitespace-nowrap"
+                      >
+                        {t.customPricingAddBtn}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {(editingCustomer.customPrices ?? []).length === 0 ? (
+                  <div className="text-[11px] text-slate-400 italic py-2">
+                    {t.customPricingEmpty}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-md max-h-72 overflow-y-auto">
+                    {(editingCustomer.customPrices ?? []).map((cp) => {
+                      const prod = products.find((p) => p.id === cp.productId);
+                      return (
+                        <div key={cp.productId} className="px-3 py-2.5 space-y-2 text-xs">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-mono-tabular font-semibold text-slate-800 truncate">
+                                {prod?.sku ?? cp.productId}
+                              </div>
+                              <div className="text-[11px] text-slate-500 truncate">
+                                {t.customStandardNameLabel}: {prod?.nameEn ?? '—'} ·{' '}
+                                {t.customPricingBaseLabel}:{' '}
+                                {prod
+                                  ? formatMoney(prod.unitPrice, prod.currency)
+                                  : '—'}
+                              </div>
                             </div>
-                            <div className="text-[11px] text-slate-500 truncate">
-                              {prod?.nameEn ?? ''} · {t.customPricingBaseLabel}:{' '}
-                              {prod
-                                ? formatMoney(prod.unitPrice, prod.currency)
-                                : '—'}
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                aria-label={`${t.customPricingPriceLabel} ${prod?.sku ?? cp.productId}`}
+                                value={cp.unitPrice}
+                                onChange={(e) => {
+                                  const nextVal = Math.max(
+                                    0,
+                                    Number(e.target.value) || 0,
+                                  );
+                                  setEditingCustomer({
+                                    ...editingCustomer,
+                                    customPrices: (
+                                      editingCustomer.customPrices ?? []
+                                    ).map((entry) =>
+                                      entry.productId === cp.productId
+                                        ? { ...entry, unitPrice: nextVal }
+                                        : entry,
+                                    ),
+                                  });
+                                }}
+                                className="w-24 h-7 px-2 text-right font-mono-tabular text-xs border border-slate-300 rounded bg-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRemoveCustomerCustomPrice(cp.productId)
+                                }
+                                aria-label={`${t.btnDelete} ${prod?.sku ?? cp.productId}`}
+                                className="p-1 text-slate-400 hover:text-red-600 rounded"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">
+                              {t.customPartNameLabel}
+                            </label>
                             <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              aria-label={`${t.customPricingPriceLabel} ${prod?.sku ?? cp.productId}`}
-                              value={cp.unitPrice}
+                              type="text"
+                              aria-label={`${t.customPartNameLabel} ${prod?.sku ?? cp.productId}`}
+                              placeholder={t.customPartNamePlaceholder}
+                              value={cp.customDescription ?? ''}
                               onChange={(e) => {
-                                const nextVal = Math.max(
-                                  0,
-                                  Number(e.target.value) || 0,
-                                );
+                                const val = e.target.value;
                                 setEditingCustomer({
                                   ...editingCustomer,
                                   customPrices: (
                                     editingCustomer.customPrices ?? []
                                   ).map((entry) =>
                                     entry.productId === cp.productId
-                                      ? { ...entry, unitPrice: nextVal }
+                                      ? {
+                                          ...entry,
+                                          customDescription: val || undefined,
+                                        }
                                       : entry,
                                   ),
                                 });
                               }}
-                              className="w-24 h-7 px-2 text-right font-mono-tabular text-xs border border-slate-300 rounded bg-white"
+                              className="w-full h-7 px-2 text-xs border border-slate-300 rounded bg-white"
                             />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleRemoveCustomerCustomPrice(cp.productId)
-                              }
-                              aria-label={`${t.btnDelete} ${prod?.sku ?? cp.productId}`}
-                              className="p-1 text-slate-400 hover:text-red-600 rounded"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
                           </div>
-                        </div>
 
-                        <TieredPricingInlineEditor
-                          tiers={cp.tieredPrices ?? []}
-                          onChange={(nextTiers) =>
-                            handleCustomerCustomTiersChange(cp.productId, nextTiers)
-                          }
-                          defaultPrice={cp.unitPrice || prod?.unitPrice || 0}
-                          t={t}
-                          compact
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Customer Custom Document Templates (.xlsx / .docx) & Field Mapping */}
-            <div className="pt-3 border-t border-slate-200 space-y-2.5">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="flex-1 min-w-[200px]">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
-                    <FileText className="w-3.5 h-3.5 text-blue-700" />
-                    <span>{t.custTemplatesTitle}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                    {t.custTemplatesHint}
-                  </p>
-                </div>
-                <input
-                  ref={templateFileRef}
-                  type="file"
-                  accept=".xlsx,.docx"
-                  onChange={handleTemplateFileSelected}
-                  className="sr-only"
-                  aria-label={t.btnUploadTemplate}
-                />
-                <button
-                  type="button"
-                  onClick={() => templateFileRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 whitespace-nowrap"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{t.btnUploadTemplate}</span>
-                </button>
-              </div>
-
-              {templateUploadError && (
-                <div
-                  role="alert"
-                  className="px-2.5 py-2 text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 rounded"
-                >
-                  {templateUploadError}
-                </div>
-              )}
-
-              {(editingCustomer.documentTemplates ?? []).map((tpl) => {
-                const hints = detectedHintsByTpl[tpl.id];
-                return (
-                  <div
-                    key={tpl.id}
-                    className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2.5 text-xs"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="px-1.5 py-0.5 text-[10px] font-mono-tabular font-bold uppercase bg-white border border-slate-300 rounded text-slate-700">
-                          {tpl.fileType}
-                        </span>
-                        <input
-                          type="text"
-                          aria-label={t.tplNameLabel}
-                          value={tpl.name}
-                          onChange={(e) =>
-                            handleUpdateCustomerTemplate(tpl.id, {
-                              name: e.target.value,
-                            })
-                          }
-                          className="h-7 px-2 text-xs font-semibold bg-white border border-slate-300 rounded flex-1 min-w-[120px]"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveCustomerTemplate(tpl.id)}
-                        aria-label={`${t.btnDelete} ${tpl.name}`}
-                        className="p-1 text-slate-400 hover:text-red-600 rounded"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
-                          {t.tplScopeLabel}
-                        </label>
-                        <select
-                          value={tpl.docScope}
-                          onChange={(e) =>
-                            handleUpdateCustomerTemplate(tpl.id, {
-                              docScope: e.target.value as DocTemplateScope,
-                            })
-                          }
-                          className="w-full h-7 px-2 text-xs bg-white border border-slate-300 rounded"
-                        >
-                          <option value="all">{t.tplScopeAll}</option>
-                          <option value="invoice">{t.tplScopeInvoice}</option>
-                          <option value="packing">{t.tplScopePacking}</option>
-                          <option value="contract">{t.tplScopeContract}</option>
-                        </select>
-                      </div>
-                      {tpl.fileType === 'xlsx' && (
-                        <div>
-                          <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
-                            {t.tplStartRowLabel}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={tpl.itemsStartRow ?? 15}
-                            onChange={(e) =>
-                              handleUpdateCustomerTemplate(tpl.id, {
-                                itemsStartRow: Math.max(
-                                  0,
-                                  Math.floor(Number(e.target.value) || 0),
-                                ),
-                              })
+                          <TieredPricingInlineEditor
+                            tiers={cp.tieredPrices ?? []}
+                            onChange={(nextTiers) =>
+                              handleCustomerCustomTiersChange(cp.productId, nextTiers)
                             }
-                            className="w-full h-7 px-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded"
+                            defaultPrice={cp.unitPrice || prod?.unitPrice || 0}
+                            t={t}
+                            compact
                           />
                         </div>
-                      )}
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Customer Custom Document Templates (.xlsx / .docx) & Field Mapping */}
+            {customerModalTab === 'templates' && (
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+                      <FileText className="w-3.5 h-3.5 text-blue-700" />
+                      <span>{t.custTemplatesTitle}</span>
                     </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      {t.custTemplatesHint}
+                    </p>
+                  </div>
+                  <input
+                    ref={templateFileRef}
+                    type="file"
+                    accept=".xlsx,.docx"
+                    onChange={handleTemplateFileSelected}
+                    className="sr-only"
+                    aria-label={t.btnUploadTemplate}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => templateFileRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 whitespace-nowrap"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{t.btnUploadTemplate}</span>
+                  </button>
+                </div>
 
-                    {hints &&
-                      (hints.placeholders.length > 0 ||
-                        hints.cells.length > 0) && (
-                        <div className="text-[11px] text-slate-500">
-                          <span className="font-medium">
-                            {t.tplDetectedHint}{' '}
+                {templateUploadError && (
+                  <div
+                    role="alert"
+                    className="px-2.5 py-2 text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 rounded"
+                  >
+                    {templateUploadError}
+                  </div>
+                )}
+
+                {(editingCustomer.documentTemplates ?? []).map((tpl) => {
+                  const hints = detectedHintsByTpl[tpl.id];
+                  return (
+                    <div
+                      key={tpl.id}
+                      className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-2.5 text-xs"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className="px-1.5 py-0.5 text-[10px] font-mono-tabular font-bold uppercase bg-white border border-slate-300 rounded text-slate-700">
+                            {tpl.fileType}
                           </span>
-                          <span className="font-mono-tabular text-slate-700">
-                            {[
-                              ...hints.placeholders.map((p) => `{${p}}`),
-                              ...hints.cells.slice(0, 8),
-                            ].join(', ')}
-                          </span>
+                          <input
+                            type="text"
+                            aria-label={t.tplNameLabel}
+                            value={tpl.name}
+                            onChange={(e) =>
+                              handleUpdateCustomerTemplate(tpl.id, {
+                                name: e.target.value,
+                              })
+                            }
+                            className="h-7 px-2 text-xs font-semibold bg-white border border-slate-300 rounded flex-1 min-w-[120px]"
+                          />
                         </div>
-                      )}
-
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-slate-700">
-                          {t.tplMappingsTitle} ({tpl.mappings.length})
-                        </span>
                         <button
                           type="button"
-                          onClick={() =>
-                            handleUpdateCustomerTemplate(tpl.id, {
-                              mappings: [
-                                ...tpl.mappings,
-                                {
-                                  id: `map-${Date.now()}-${tpl.mappings.length}`,
-                                  systemField: 'totalAmount',
-                                  targetRef:
-                                    tpl.fileType === 'xlsx'
-                                      ? 'D20'
-                                      : '{totalAmount}',
-                                },
-                              ],
-                            })
-                          }
-                          className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50"
+                          onClick={() => handleRemoveCustomerTemplate(tpl.id)}
+                          aria-label={`${t.btnDelete} ${tpl.name}`}
+                          className="p-1 text-slate-400 hover:text-red-600 rounded"
                         >
-                          <Plus className="w-3 h-3" />
-                          <span>{t.tplAddMapping}</span>
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
-                      {tpl.mappings.map((m, mIdx) => (
-                        <div
-                          key={m.id}
-                          className="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5"
-                        >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                            {t.tplScopeLabel}
+                          </label>
                           <select
-                            aria-label={`${t.tplSystemField} ${mIdx + 1}`}
-                            value={m.systemField}
+                            value={tpl.docScope}
                             onChange={(e) =>
                               handleUpdateCustomerTemplate(tpl.id, {
-                                mappings: tpl.mappings.map((entry) =>
-                                  entry.id === m.id
-                                    ? {
-                                        ...entry,
-                                        systemField: e.target
-                                          .value as TemplateSystemFieldKey,
-                                      }
-                                    : entry,
-                                ),
+                                docScope: e.target.value as DocTemplateScope,
                               })
                             }
-                            className="h-7 px-1.5 text-[11px] bg-white border border-slate-300 rounded"
+                            className="w-full h-7 px-2 text-xs bg-white border border-slate-300 rounded"
                           >
-                            {TEMPLATE_SYSTEM_FIELDS.map((f) => (
-                              <option key={f.key} value={f.key}>
-                                {f.labelZh} ({f.key})
-                              </option>
-                            ))}
+                            <option value="all">{t.tplScopeAll}</option>
+                            <option value="invoice">{t.tplScopeInvoice}</option>
+                            <option value="packing">{t.tplScopePacking}</option>
+                            <option value="contract">{t.tplScopeContract}</option>
                           </select>
-                          <input
-                            type="text"
-                            aria-label={`${t.tplTargetRef} ${mIdx + 1}`}
-                            placeholder="B10 / {CLIENT}"
-                            value={m.targetRef}
-                            onChange={(e) =>
-                              handleUpdateCustomerTemplate(tpl.id, {
-                                mappings: tpl.mappings.map((entry) =>
-                                  entry.id === m.id
-                                    ? { ...entry, targetRef: e.target.value }
-                                    : entry,
-                                ),
-                              })
-                            }
-                            className="h-7 px-2 text-[11px] font-mono-tabular bg-white border border-slate-300 rounded"
-                          />
+                        </div>
+                        {tpl.fileType === 'xlsx' && (
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-600 mb-0.5">
+                              {t.tplStartRowLabel}
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={tpl.itemsStartRow ?? 15}
+                              onChange={(e) =>
+                                handleUpdateCustomerTemplate(tpl.id, {
+                                  itemsStartRow: Math.max(
+                                    0,
+                                    Math.floor(Number(e.target.value) || 0),
+                                  ),
+                                })
+                              }
+                              className="w-full h-7 px-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {hints &&
+                        (hints.placeholders.length > 0 ||
+                          hints.cells.length > 0) && (
+                          <div className="text-[11px] text-slate-500">
+                            <span className="font-medium">
+                              {t.tplDetectedHint}{' '}
+                            </span>
+                            <span className="font-mono-tabular text-slate-700">
+                              {[
+                                ...hints.placeholders.map((p) => `{${p}}`),
+                                ...hints.cells.slice(0, 8),
+                              ].join(', ')}
+                            </span>
+                          </div>
+                        )}
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-slate-700">
+                            {t.tplMappingsTitle} ({tpl.mappings.length})
+                          </span>
                           <button
                             type="button"
                             onClick={() =>
                               handleUpdateCustomerTemplate(tpl.id, {
-                                mappings: tpl.mappings.filter(
-                                  (entry) => entry.id !== m.id,
-                                ),
+                                mappings: [
+                                  ...tpl.mappings,
+                                  {
+                                    id: `map-${Date.now()}-${tpl.mappings.length}`,
+                                    systemField: 'totalAmount',
+                                    targetRef:
+                                      tpl.fileType === 'xlsx'
+                                        ? 'D20'
+                                        : '{totalAmount}',
+                                  },
+                                ],
                               })
                             }
-                            aria-label={`${t.btnDelete} mapping ${mIdx + 1}`}
-                            className="p-1 text-slate-400 hover:text-red-600 rounded"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Plus className="w-3 h-3" />
+                            <span>{t.tplAddMapping}</span>
                           </button>
                         </div>
-                      ))}
+
+                        {tpl.mappings.map((m, mIdx) => (
+                          <div
+                            key={m.id}
+                            className="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5"
+                          >
+                            <select
+                              aria-label={`${t.tplSystemField} ${mIdx + 1}`}
+                              value={m.systemField}
+                              onChange={(e) =>
+                                handleUpdateCustomerTemplate(tpl.id, {
+                                  mappings: tpl.mappings.map((entry) =>
+                                    entry.id === m.id
+                                      ? {
+                                          ...entry,
+                                          systemField: e.target
+                                            .value as TemplateSystemFieldKey,
+                                        }
+                                      : entry,
+                                  ),
+                                })
+                              }
+                              className="h-7 px-1.5 text-[11px] bg-white border border-slate-300 rounded"
+                            >
+                              {TEMPLATE_SYSTEM_FIELDS.map((f) => (
+                                <option key={f.key} value={f.key}>
+                                  {f.labelZh} ({f.key})
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              aria-label={`${t.tplTargetRef} ${mIdx + 1}`}
+                              placeholder="B10 / {CLIENT}"
+                              value={m.targetRef}
+                              onChange={(e) =>
+                                handleUpdateCustomerTemplate(tpl.id, {
+                                  mappings: tpl.mappings.map((entry) =>
+                                    entry.id === m.id
+                                      ? { ...entry, targetRef: e.target.value }
+                                      : entry,
+                                  ),
+                                })
+                              }
+                              className="h-7 px-2 text-[11px] font-mono-tabular bg-white border border-slate-300 rounded"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateCustomerTemplate(tpl.id, {
+                                  mappings: tpl.mappings.filter(
+                                    (entry) => entry.id !== m.id,
+                                  ),
+                                })
+                              }
+                              aria-label={`${t.btnDelete} mapping ${mIdx + 1}`}
+                              className="p-1 text-slate-400 hover:text-red-600 rounded"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
 
             <ModalFooter
               onCancel={() => setEditingCustomer(null)}

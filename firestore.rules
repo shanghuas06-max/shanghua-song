@@ -119,9 +119,13 @@ service cloud.firestore {
           data.customPrices.size() == 0 || (
             data.customPrices[0] is map
             && data.customPrices[0].keys().hasAll(['productId', 'unitPrice'])
-            && data.customPrices[0].keys().hasOnly(['productId', 'unitPrice', 'tieredPrices'])
+            && data.customPrices[0].keys().hasOnly(['productId', 'unitPrice', 'customDescription', 'tieredPrices'])
             && isValidId(data.customPrices[0].productId)
             && isNonNegNum(data.customPrices[0].unitPrice)
+            && (
+              !('customDescription' in data.customPrices[0]) ||
+              isStrLen(data.customPrices[0].customDescription, 0, 1000)
+            )
             && (
               !('tieredPrices' in data.customPrices[0]) || (
                 data.customPrices[0].tieredPrices is list

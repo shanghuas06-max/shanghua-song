@@ -131,6 +131,7 @@ export interface PriceTier {
 export interface CustomerProductPrice {
   productId: string;
   unitPrice: number;
+  customDescription?: string;
   tieredPrices?: PriceTier[];
 }
 
@@ -245,6 +246,7 @@ export interface PackingListRow {
   ctnNo: string;
   itemNo: number;
   type: string;
+  partName?: string;
   size: string;
   material: string;
   surfaceFinish: string;

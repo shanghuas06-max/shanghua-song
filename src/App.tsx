@@ -353,7 +353,7 @@ export default function App() {
           orderCurrency,
           orderExchangeRate,
         )
-      : { unitPrice: 0, basePriceJpy: 0 };
+      : { unitPrice: 0, basePriceJpy: 0, customDescription: undefined };
 
     const newOrder: ExportOrder = {
       id: `ord-${Date.now()}`,
@@ -380,7 +380,7 @@ export default function App() {
               id: `oi-${Date.now()}`,
               productId: prod.id,
               sku: prod.sku,
-              description: prod.nameEn,
+              description: resolvedPrice.customDescription || prod.nameEn,
               size: prod.size ?? '',
               material: prod.material ?? '',
               surfaceFinish: prod.surfaceFinish ?? '',
@@ -855,6 +855,7 @@ export default function App() {
           activeSection={activeSection}
           activeInvoiceNo={activeOrder?.invoiceNo ?? ''}
           hasActiveOrder={Boolean(activeOrder)}
+          onNavigate={setActiveSection}
           onOpenMobileNav={() => setMobileNavOpen(true)}
           onCreateNewOrder={handleCreateNewOrder}
           onSaveOrder={handleExplicitSaveOrder}

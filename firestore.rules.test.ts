@@ -50,7 +50,7 @@ test('Sanitizers clamp customer, product, and logistics payloads cleanly', () =>
       fax: undefined,
       taxOrImporterId: undefined,
       customPrices: [
-        { productId: 'prod-1', unitPrice: 1.45 },
+        { productId: 'prod-1', unitPrice: 1.45, customDescription: 'VIP Nut M8' },
         { productId: '../bad', unitPrice: 99 },
         {
           productId: 'prod-2',
@@ -67,7 +67,12 @@ test('Sanitizers clamp customer, product, and logistics payloads cleanly', () =>
   assert.equal(sanitizedCustom.taxOrImporterId, '');
   assert.equal(sanitizedCustom.ownerId, 'uid-123');
   assert.deepEqual(sanitizedCustom.customPrices, [
-    { productId: 'prod-1', unitPrice: 1.45, tieredPrices: [] },
+    {
+      productId: 'prod-1',
+      unitPrice: 1.45,
+      customDescription: 'VIP Nut M8',
+      tieredPrices: [],
+    },
     {
       productId: 'prod-2',
       unitPrice: 0,
@@ -112,6 +117,7 @@ test('firestore.rules includes default-deny catch-all, email_verified gate, and 
   assert.match(content, /id\.matches\('\^\[a-zA-Z0-9_-\]\+\$'\)/);
   assert.doesNotMatch(content, /hasParentUser/);
   assert.match(content, /taxOrImporterId/);
+  assert.match(content, /customDescription/);
   assert.match(content, /tieredPrices/);
   assert.match(content, /exchangeRate/);
   assert.match(content, /cartonsPerLayer/);

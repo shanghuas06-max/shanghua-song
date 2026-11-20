@@ -169,12 +169,17 @@ export function sanitizeCustomerCustomPrices(
     const rawId = (entry as { productId?: unknown }).productId;
     if (!isValidFirestoreId(rawId)) continue;
     const price = nonNegNum((entry as { unitPrice?: unknown }).unitPrice, 0);
+    const customDescription = clampStr(
+      (entry as { customDescription?: unknown }).customDescription,
+      BLUEPRINT_LIMITS.LONG_MAX,
+    ).trim();
     const tieredPrices = sanitizePriceTiers(
       (entry as { tieredPrices?: unknown }).tieredPrices,
     );
     deduped.set(rawId, {
       productId: rawId,
       unitPrice: price,
+      ...(customDescription ? { customDescription } : {}),
       tieredPrices,
     });
     if (deduped.size >= BLUEPRINT_LIMITS.MAX_CUSTOM_PRICES) break;

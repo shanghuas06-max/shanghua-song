@@ -39,6 +39,7 @@ import {
   formatCurrencyLabel,
   formatDocMoney,
   formatDocumentDate,
+  formatDocumentPartDisplay,
   resolveItemSpecs,
 } from '../utils/documentHelpers';
 import {
@@ -1371,13 +1372,24 @@ const InvoiceSheet: React.FC<
               const prod = products.find((p) => p.id === item.productId);
               const specs = resolveItemSpecs(item, prod);
               const calc = summary.lineItems[idx];
+              const partDisplay = formatDocumentPartDisplay(
+                item,
+                customer,
+                products,
+              );
               return (
                 <tr key={item.id}>
                   <td className="border border-black px-1 py-0.5 text-center">
                     {idx + 1}
                   </td>
-                  <td className="border border-black px-1.5 py-0.5 font-semibold whitespace-nowrap">
-                    {item.sku || '—'}
+                  <td className="border border-black px-1.5 py-0.5 font-semibold">
+                    <div className="leading-tight">{partDisplay.partName}</div>
+                    {partDisplay.sku &&
+                      partDisplay.partName !== partDisplay.sku && (
+                        <div className="text-[9px] font-normal text-slate-600 leading-tight whitespace-nowrap">
+                          {partDisplay.sku}
+                        </div>
+                      )}
                   </td>
                   <td className="border border-black px-1.5 py-0.5 whitespace-nowrap">
                     {specs.size}
@@ -1594,8 +1606,11 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
   onCommitOverride,
 }) => {
   const displayRows = useMemo(
-    () => buildPackingListDisplayRows(order.items, products, order.packingRows),
-    [order.items, products, order.packingRows],
+    () =>
+      buildPackingListDisplayRows(order.items, products, order.packingRows, {
+        customer,
+      }),
+    [order.items, products, order.packingRows, customer],
   );
 
   const footnotes = extractSurfaceFootnotes(
@@ -1820,10 +1835,15 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
                   <td className={`${cellBorder} px-1 py-0.5 text-center`}>
                     {row.itemNo}
                   </td>
-                  <td
-                    className={`${cellBorder} px-1.5 py-0.5 font-semibold whitespace-nowrap`}
-                  >
-                    {row.type || '—'}
+                  <td className={`${cellBorder} px-1.5 py-0.5 font-semibold`}>
+                    <div className="leading-tight">
+                      {row.partName || row.type || '—'}
+                    </div>
+                    {row.type && row.partName && row.partName !== row.type && (
+                      <div className="text-[9px] font-normal text-slate-600 leading-tight whitespace-nowrap">
+                        {row.type}
+                      </div>
+                    )}
                   </td>
                   <td className={`${cellBorder} px-1.5 py-0.5 whitespace-nowrap`}>
                     {row.size}
@@ -2206,6 +2226,11 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
             {order.items.map((item, idx) => {
               const prod = products.find((p) => p.id === item.productId);
               const specs = resolveItemSpecs(item, prod);
+              const partDisplay = formatDocumentPartDisplay(
+                item,
+                customer,
+                products,
+              );
               const calc = summary.lineItems[idx];
               const matFinish = [specs.material, specs.surfaceFinish]
                 .filter(Boolean)
@@ -2215,8 +2240,14 @@ const ContractSheet: React.FC<SheetCommonProps> = ({
                   <td className="border border-black px-1 py-1 text-center">
                     {idx + 1}.
                   </td>
-                  <td className="border border-black px-1.5 py-1 font-semibold whitespace-nowrap">
-                    {item.sku || item.description}
+                  <td className="border border-black px-1.5 py-1 font-semibold">
+                    <div className="leading-tight">{partDisplay.partName}</div>
+                    {partDisplay.sku &&
+                      partDisplay.partName !== partDisplay.sku && (
+                        <div className="text-[9px] font-normal text-slate-600 leading-tight whitespace-nowrap">
+                          {partDisplay.sku}
+                        </div>
+                      )}
                   </td>
                   <td className="border border-black px-1.5 py-1 text-center whitespace-nowrap">
                     {specs.size || '—'}

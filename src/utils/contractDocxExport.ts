@@ -30,6 +30,7 @@ import { calculateOrderSummary } from './exportCalculations';
 import {
   formatDocMoney,
   formatDocumentDate,
+  formatDocumentPartDisplay,
   resolveItemSpecs,
 } from './documentHelpers';
 import {
@@ -397,6 +398,7 @@ export function buildContractDocxDocument(
   order.items.forEach((item, idx) => {
     const prod = products.find((p) => p.id === item.productId);
     const specs = resolveItemSpecs(item, prod);
+    const partDisplay = formatDocumentPartDisplay(item, customer, products);
     const calc = summary.lineItems[idx];
     const matFinish = [specs.material, specs.surfaceFinish]
       .filter(Boolean)
@@ -408,7 +410,7 @@ export function buildContractDocxDocument(
             align: AlignmentType.CENTER,
             size: 19,
           }),
-          makeCell(item.sku || item.description || '—', {
+          makeCell(partDisplay.combinedLabel, {
             bold: true,
             size: 19,
           }),

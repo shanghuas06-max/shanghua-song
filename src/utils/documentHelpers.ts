@@ -1,5 +1,6 @@
 import type {
   CurrencyCode,
+  Customer,
   DocLanguage,
   OrderItem,
   PackingListRow,
@@ -127,6 +128,55 @@ export function resolveItemSpecs(
   };
 }
 
+export function resolveOrderItemPartName(
+  item: Pick<OrderItem, 'productId' | 'description' | 'sku'>,
+  customer?: Customer,
+  products: Product[] = [],
+): string {
+  if (item.productId && Array.isArray(customer?.customPrices)) {
+    const custEntry = customer.customPrices.find(
+      (cp) => cp.productId === item.productId,
+    );
+    if (custEntry?.customDescription?.trim()) {
+      return custEntry.customDescription.trim();
+    }
+  }
+  if (item.description?.trim()) {
+    return item.description.trim();
+  }
+  if (item.productId) {
+    const prod = products.find((p) => p.id === item.productId);
+    if (prod?.nameEn?.trim()) {
+      return prod.nameEn.trim();
+    }
+  }
+  return item.sku?.trim() || '—';
+}
+
+export function formatDocumentPartDisplay(
+  item: Pick<OrderItem, 'productId' | 'description' | 'sku'>,
+  customer?: Customer,
+  products: Product[] = [],
+): {
+  partName: string;
+  sku: string;
+  hasCustomPartName: boolean;
+  combinedLabel: string;
+} {
+  const custEntry =
+    item.productId && Array.isArray(customer?.customPrices)
+      ? customer.customPrices.find((cp) => cp.productId === item.productId)
+      : undefined;
+  const hasCustomPartName = Boolean(custEntry?.customDescription?.trim());
+  const partName = resolveOrderItemPartName(item, customer, products);
+  const sku = item.sku?.trim() || '';
+  const combinedLabel =
+    sku && partName && partName !== sku
+      ? `${partName} (${sku})`
+      : partName || sku || '—';
+  return { partName, sku, hasCustomPartName, combinedLabel };
+}
+
 export interface RenderedPackingRow extends PackingListRow {
   palletRowSpan: number;
   showPalletCell: boolean;
@@ -140,17 +190,28 @@ export function buildPackingListDisplayRows(
   items: OrderItem[],
   products: Product[],
   explicitRows?: PackingListRow[],
-  options?: { palletCapacity?: number },
+  options?: { palletCapacity?: number; customer?: Customer },
 ): RenderedPackingRow[] {
   const palletCapacity = Math.max(1, Math.round(options?.palletCapacity ?? 60));
+  const customer = options?.customer;
 
   const baseRows: (PackingListRow & { unitLabel: string })[] =
     explicitRows && explicitRows.length > 0
-      ? explicitRows.map((row) => ({
-          ...row,
-          unitLabel:
-            items[Math.max(0, row.itemNo - 1)]?.unit?.toLowerCase() || 'sets',
-        }))
+      ? explicitRows.map((row) => {
+          const matchedItem =
+            items[Math.max(0, row.itemNo - 1)] ??
+            items.find((it) => it.sku && it.sku === row.type);
+          const resolvedPartName =
+            row.partName?.trim() ||
+            (matchedItem
+              ? resolveOrderItemPartName(matchedItem, customer, products)
+              : row.type);
+          return {
+            ...row,
+            partName: resolvedPartName,
+            unitLabel: matchedItem?.unit?.toLowerCase() || 'sets',
+          };
+        })
       : (() => {
           const rows: (PackingListRow & { unitLabel: string })[] = [];
           const prodById = new Map(products.map((p) => [p.id, p]));
@@ -231,6 +292,7 @@ export function buildPackingListDisplayRows(
                   ctnNo,
                   itemNo: mIdx + 1,
                   type: mItem.sku,
+                  partName: resolveOrderItemPartName(mItem, customer, products),
                   size: specs.size,
                   material: specs.material,
                   surfaceFinish: specs.surfaceFinish,
@@ -287,6 +349,7 @@ export function buildPackingListDisplayRows(
                 ctnNo,
                 itemNo: idx + 1,
                 type: item.sku,
+                partName: resolveOrderItemPartName(item, customer, products),
                 size: specs.size,
                 material: specs.material,
                 surfaceFinish: specs.surfaceFinish,
@@ -342,6 +405,7 @@ export function buildPackingListDisplayRows(
                     : `${chunkStart} - ${chunkEnd}`,
                 itemNo: idx + 1,
                 type: item.sku,
+                partName: resolveOrderItemPartName(item, customer, products),
                 size: specs.size,
                 material: specs.material,
                 surfaceFinish: specs.surfaceFinish,

@@ -23,6 +23,7 @@ import {
   formatDocMoney,
   formatDocumentDate,
   resolveItemSpecs,
+  resolveOrderItemPartName,
 } from './documentHelpers';
 import {
   createDefaultContractSettings,
@@ -175,10 +176,11 @@ export function buildTemplateDataContext(
     const prod = products.find((p) => p.id === item.productId);
     const specs = resolveItemSpecs(item, prod);
     const calc = summary.lineItems[idx];
+    const resolvedPartName = resolveOrderItemPartName(item, customer, products);
     return {
       index: idx + 1,
       sku: item.sku || '',
-      description: item.description || '',
+      description: resolvedPartName === '—' ? '' : resolvedPartName,
       size: specs.size,
       material: specs.material,
       surfaceFinish: specs.surfaceFinish,
@@ -246,10 +248,21 @@ export function buildTemplateDataContext(
     totalAmountWords,
     remarks: getOverride(order, 'inv.remarks', order.remarks || ''),
     itemsSummary: items
-      .map((i) => `${i.sku || i.description} × ${i.quantity} ${i.unit}`)
+      .map(
+        (i) =>
+          `${
+            i.description && i.sku && i.description !== i.sku
+              ? `${i.description} (${i.sku})`
+              : i.description || i.sku
+          } × ${i.quantity} ${i.unit}`,
+      )
       .join('; '),
     firstItemSku: firstItem?.sku || '',
-    firstItemName: firstItem?.description || '',
+    firstItemName:
+      items[0]?.description ||
+      (firstItem
+        ? resolveOrderItemPartName(firstItem, customer, products)
+        : ''),
   };
 
   const special = order.docSpecialFields;

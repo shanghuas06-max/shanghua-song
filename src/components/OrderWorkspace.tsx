@@ -319,6 +319,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       products,
       nextCurrency,
       nextRate,
+      { preserveDescription: true },
     );
     updateOrder({
       currency: nextCurrency,
@@ -340,6 +341,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       products,
       order.currency,
       nextRate,
+      { preserveDescription: true },
     );
     updateOrder({
       exchangeRate: nextRate,
@@ -428,7 +430,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       id: `oi-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       productId: prod.id,
       sku: prod.sku,
-      description: prod.nameEn,
+      description: resolved.customDescription || prod.nameEn,
       size: prod.size ?? '',
       material: prod.material ?? '',
       surfaceFinish: prod.surfaceFinish ?? '',
@@ -485,13 +487,19 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
   };
 
   const handleAutoBuildPackingRows = () => {
-    const generated = buildPackingListDisplayRows(order.items, products).map(
+    const generated = buildPackingListDisplayRows(
+      order.items,
+      products,
+      undefined,
+      { customer: currentCustomer },
+    ).map(
       (r): PackingListRow => ({
         id: r.id,
         palletNo: r.palletNo,
         ctnNo: r.ctnNo,
         itemNo: r.itemNo,
         type: r.type,
+        partName: r.partName,
         size: r.size,
         material: r.material,
         surfaceFinish: r.surfaceFinish,
@@ -924,9 +932,11 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                   order.currency,
                   effectiveExchangeRate,
                 );
+                const displayName = resolved.customDescription || p.nameEn;
                 return (
                   <option key={p.id} value={p.id}>
-                    {p.sku} · {p.nameEn} ({formatMoney(resolved.unitPrice, order.currency)}
+                    {p.sku} · {displayName} ({formatMoney(resolved.unitPrice, order.currency)}
+                    {resolved.customDescription ? ` · ${t.customPartNameBadge}` : ''}
                     {resolved.isCustom ? ` · ${t.customPricingBadge}` : ''}
                     {resolved.isTiered && resolved.matchedTierLabel
                       ? ` · ${t.tierMatchedBadge} ${resolved.matchedTierLabel}`
@@ -1038,6 +1048,22 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                           }
                           className="w-full h-8 px-2 text-xs border border-slate-200 rounded bg-white"
                         />
+                        {(() => {
+                          const custMap = currentCustomer?.customPrices?.find(
+                            (cp) => cp.productId === item.productId,
+                          );
+                          const prod = products.find((p) => p.id === item.productId);
+                          if (!custMap?.customDescription?.trim()) return null;
+                          return (
+                            <div
+                              data-testid={`custom-part-name-badge-${idx}`}
+                              className="text-[10px] font-medium text-blue-700 truncate"
+                            >
+                              {t.customPartNameBadge} · {t.customStandardNameLabel}:{' '}
+                              {prod?.nameEn ?? item.sku}
+                            </div>
+                          );
+                        })()}
                         <div className="grid grid-cols-3 gap-1">
                           <input
                             type="text"

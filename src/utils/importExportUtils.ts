@@ -27,7 +27,9 @@ import {
   formatCurrencyLabel,
   formatDocMoney,
   formatDocumentDate,
+  formatDocumentPartDisplay,
   resolveItemSpecs,
+  resolveOrderItemPartName,
 } from './documentHelpers';
 import {
   createDefaultContractSettings,
@@ -64,6 +66,7 @@ export type ResolvedPriceSource =
 export interface ResolvedPricingResult {
   unitPrice: number;
   basePriceJpy: number;
+  customDescription?: string;
   isCustom: boolean;
   isTiered: boolean;
   matchedTierLabel?: string;
@@ -188,9 +191,12 @@ export function resolveCustomerProductPricing(
     unitPrice = convertJpyToCurrency(basePriceJpy, targetCurrency, exchangeRate);
   }
 
+  const customDescription = custEntry?.customDescription?.trim() || undefined;
+
   return {
     unitPrice,
     basePriceJpy,
+    customDescription,
     isCustom,
     isTiered,
     matchedTierLabel,
@@ -224,6 +230,7 @@ export function applyCustomerPricingToItems(
   products: Product[],
   orderCurrency?: CurrencyCode,
   exchangeRate?: number,
+  options?: { preserveDescription?: boolean },
 ): OrderItem[] {
   return items.map((item) => {
     if (!item.productId) {
@@ -255,6 +262,9 @@ export function applyCustomerPricingToItems(
     );
     return {
       ...item,
+      ...(options?.preserveDescription
+        ? {}
+        : { description: resolved.customDescription || prod.nameEn }),
       unitPrice: resolved.unitPrice,
       baseUnitPriceJpy: resolved.basePriceJpy,
     };
@@ -1084,10 +1094,17 @@ export function buildFormalDocumentWorkbook(
     const prod = products.find((p) => p.id === item.productId);
     const specs = resolveItemSpecs(item, prod);
     const calc = summary.lineItems[idx];
+    const partDisplay = formatDocumentPartDisplay(item, ctx.customer, products);
+    const invItemCell =
+      partDisplay.sku &&
+      partDisplay.partName &&
+      partDisplay.partName !== partDisplay.sku
+        ? `${partDisplay.partName}\n(${partDisplay.sku})`
+        : partDisplay.partName || partDisplay.sku || '—';
     const r = invAoa.length;
     invAoa.push([
       idx + 1,
-      item.sku || '—',
+      invItemCell,
       specs.size,
       specs.material,
       specs.surfaceFinish,
@@ -1098,7 +1115,7 @@ export function buildFormalDocumentWorkbook(
       item.unitPrice,
       calc?.amount ?? 0,
     ]);
-    invRowHeights[r] = { hpt: 17 };
+    invRowHeights[r] = { hpt: invItemCell.includes('\n') ? 26 : 17 };
   });
   const invDataEndRow = invAoa.length - 1;
 
@@ -1637,6 +1654,7 @@ export function buildFormalDocumentWorkbook(
     order.items,
     products,
     order.packingRows,
+    { customer: ctx.customer },
   );
 
   const plDataStartRow = plAoa.length;
@@ -1654,11 +1672,15 @@ export function buildFormalDocumentWorkbook(
         e: { r: r + dRow.ctnRowSpan - 1, c: 1 },
       });
     }
+    const plTypeCell =
+      dRow.type && dRow.partName && dRow.partName !== dRow.type
+        ? `${dRow.partName}\n(${dRow.type})`
+        : dRow.partName || dRow.type || '—';
     plAoa.push([
       dRow.showPalletCell ? dRow.palletNo : '',
       dRow.showCtnCell ? dRow.ctnNo : '',
       dRow.itemNo,
-      dRow.type || '—',
+      plTypeCell,
       dRow.size,
       dRow.material,
       dRow.surfaceFinish,
@@ -1667,7 +1689,7 @@ export function buildFormalDocumentWorkbook(
       Number((dRow.unitWeightKg || 0).toFixed(4)),
       Number((dRow.totalWeightKg || 0).toFixed(1)),
     ]);
-    plRowHeights[r] = { hpt: 17 };
+    plRowHeights[r] = { hpt: plTypeCell.includes('\n') ? 26 : 17 };
   });
   const plDataEndRow = plAoa.length - 1;
 
@@ -2086,10 +2108,17 @@ export function buildFormalDocumentWorkbook(
     const prod = products.find((p) => p.id === item.productId);
     const specs = resolveItemSpecs(item, prod);
     const calc = summary.lineItems[idx];
+    const partDisplay = formatDocumentPartDisplay(item, ctx.customer, products);
+    const ctItemCell =
+      partDisplay.sku &&
+      partDisplay.partName &&
+      partDisplay.partName !== partDisplay.sku
+        ? `${partDisplay.partName}\n(${partDisplay.sku})`
+        : partDisplay.partName || partDisplay.sku || '—';
     const r = ctAoa.length;
     ctAoa.push([
       `${idx + 1}.`,
-      item.sku || item.description || '—',
+      ctItemCell,
       specs.size,
       [specs.material, specs.surfaceFinish].filter(Boolean).join(' / '),
       item.quantity,
@@ -2097,7 +2126,7 @@ export function buildFormalDocumentWorkbook(
       calc?.amount ?? 0,
       '',
     ]);
-    ctRowHeights[r] = { hpt: 17 };
+    ctRowHeights[r] = { hpt: ctItemCell.includes('\n') ? 26 : 17 };
     ctMerges.push({ s: { r, c: 6 }, e: { r, c: 7 } });
   });
   const ctDataEnd = ctAoa.length - 1;
@@ -2460,13 +2489,14 @@ export function buildOrderExcelRows(
 
     order.items.forEach((item, idx) => {
       const calc = summary.lineItems[idx];
+      const partName = resolveOrderItemPartName(item, customer);
       const specParts = [item.size, item.material, item.surfaceFinish].filter(
         Boolean,
       );
       const detailText =
         specParts.length > 0
-          ? `${item.description} (${specParts.join(' / ')})`
-          : item.description;
+          ? `${partName} (${specParts.join(' / ')})`
+          : partName;
 
       rows.push({
         订单号: order.invoiceNo,

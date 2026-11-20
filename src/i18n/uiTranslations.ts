@@ -314,6 +314,14 @@ export interface UiDictionary {
   sharedCartonGroupPrefix: string;
   halfCartonBadge: string;
   consolidatedSavingsHint: string;
+  custModalTabBasic: string;
+  custModalTabProducts: string;
+  custModalTabTemplates: string;
+  customPartNameLabel: string;
+  customPartNamePlaceholder: string;
+  customPartNameBadge: string;
+  customStandardNameLabel: string;
+  breadcrumbBackToOrders: string;
 }
 
 export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
@@ -636,6 +644,14 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     sharedCartonGroupPrefix: '拼箱组',
     halfCartonBadge: '半箱',
     consolidatedSavingsHint: '拼箱合并：{raw} 箱 → 实计 {merged} 整箱',
+    custModalTabBasic: '基础信息',
+    custModalTabProducts: '客户专属产品',
+    custModalTabTemplates: '专属单据模板',
+    customPartNameLabel: '客户专属品名 (Customer Part Name)',
+    customPartNamePlaceholder: '留空则默认使用产品库标准品名',
+    customPartNameBadge: '专属品名',
+    customStandardNameLabel: '标准品名',
+    breadcrumbBackToOrders: '返回订单列表',
   },
   ja: {
     brandTitle: 'HARDLOCK ERP',
@@ -956,6 +972,14 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     sharedCartonGroupPrefix: '混載',
     halfCartonBadge: '半箱',
     consolidatedSavingsHint: '混載統合：{raw} 箱 → 実梱包 {merged} 箱',
+    custModalTabBasic: '基本情報',
+    custModalTabProducts: '顧客専用製品',
+    custModalTabTemplates: '専用帳票テンプレート',
+    customPartNameLabel: '顧客専用品名 (Customer Part Name)',
+    customPartNamePlaceholder: '空欄時は製品マスタの標準品名を使用',
+    customPartNameBadge: '専用品名',
+    customStandardNameLabel: '標準品名',
+    breadcrumbBackToOrders: '受注一覧へ戻る',
   },
   en: {
     brandTitle: 'HARDLOCK ERP',
@@ -1276,5 +1300,13 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     sharedCartonGroupPrefix: 'Mix Box',
     halfCartonBadge: 'Partial',
     consolidatedSavingsHint: 'Consolidated: {raw} raw → {merged} physical cartons',
+    custModalTabBasic: 'Basic Info',
+    custModalTabProducts: 'Customer Products',
+    custModalTabTemplates: 'Document Templates',
+    customPartNameLabel: 'Customer Part Name',
+    customPartNamePlaceholder: 'Leave blank to use catalog standard name',
+    customPartNameBadge: 'Custom Name',
+    customStandardNameLabel: 'Standard',
+    breadcrumbBackToOrders: 'Back to Orders List',
   },
 };

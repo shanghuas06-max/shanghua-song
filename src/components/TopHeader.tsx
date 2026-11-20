@@ -7,6 +7,7 @@ interface TopHeaderProps {
   activeSection: NavSection;
   activeInvoiceNo: string;
   hasActiveOrder: boolean;
+  onNavigate?: (section: NavSection) => void;
   onOpenMobileNav: () => void;
   onCreateNewOrder: () => void;
   onSaveOrder: () => void;
@@ -19,6 +20,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   activeSection,
   activeInvoiceNo,
   hasActiveOrder,
+  onNavigate,
   onOpenMobileNav,
   onCreateNewOrder,
   onSaveOrder,
@@ -46,28 +48,60 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <Menu className="w-5 h-5" />
         </button>
 
-        {/* Contextual Breadcrumb */}
-        <div className="flex items-center gap-1.5 sm:gap-2 text-sm min-w-0">
-          <span className="font-semibold text-slate-900 whitespace-nowrap shrink-0">
+        {/* Contextual Clickable Breadcrumb */}
+        <nav
+          aria-label="Breadcrumb"
+          className="flex items-center gap-1.5 sm:gap-2 text-sm min-w-0"
+        >
+          <button
+            type="button"
+            data-testid="breadcrumb-root"
+            onClick={() => onNavigate?.('history')}
+            title={t.breadcrumbBackToOrders}
+            className="font-semibold text-slate-900 hover:text-blue-700 hover:underline whitespace-nowrap shrink-0 cursor-pointer transition-colors rounded px-1 py-0.5 -ml-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
             HARDLOCK
-          </span>
+          </button>
           <span className="hidden sm:inline text-slate-300" aria-hidden="true">
             /
           </span>
-          <span className="hidden sm:inline text-slate-600 truncate">
+          <button
+            type="button"
+            data-testid="breadcrumb-section"
+            onClick={() => onNavigate?.('history')}
+            title={
+              activeSection !== 'history' ? t.breadcrumbBackToOrders : undefined
+            }
+            aria-current={activeSection === 'history' ? 'page' : undefined}
+            className={`hidden sm:inline truncate rounded px-1 py-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              activeSection === 'history'
+                ? 'text-slate-800 font-medium cursor-default'
+                : 'text-slate-600 hover:text-blue-700 hover:underline cursor-pointer'
+            }`}
+          >
             {sectionLabelMap[activeSection]}
-          </span>
+          </button>
           {activeInvoiceNo && (
             <>
               <span className="hidden md:inline text-slate-300" aria-hidden="true">
                 /
               </span>
-              <span className="hidden md:inline font-mono-tabular text-xs text-slate-500 truncate">
+              <button
+                type="button"
+                data-testid="breadcrumb-order"
+                onClick={() => onNavigate?.('order')}
+                aria-current={activeSection === 'order' ? 'page' : undefined}
+                className={`hidden md:inline font-mono-tabular text-xs truncate rounded px-1 py-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  activeSection === 'order'
+                    ? 'text-slate-700 font-semibold cursor-default'
+                    : 'text-slate-500 hover:text-blue-700 hover:underline cursor-pointer'
+                }`}
+              >
                 {activeInvoiceNo}
-              </span>
+              </button>
             </>
           )}
-        </div>
+        </nav>
       </div>
 
       {/* Persistent Top-Right Actions (New Order always visible even with 0 orders) */}

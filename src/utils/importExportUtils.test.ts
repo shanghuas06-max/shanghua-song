@@ -555,5 +555,66 @@ test('buildContractDocxBuffer embeds uploaded stamp and signature PNGs and PACKI
   assert.equal(foundDotted, true, 'Shared carton sub-row should have dotted top border in PACKING LIST Excel');
 });
 
+test('customer-specific part name (customDescription) populates order items and propagates to Invoice, Packing List, and Contract exports', async () => {
+  const seed = createInitialErpState();
+  const order = seed.orders[0];
+  const prod0 = seed.products.find((p) => p.id === order.items[0].productId)!;
+  const prod1 = seed.products[1];
+  const customCustomer = {
+    ...seed.customers.find((c) => c.id === order.customerId)!,
+    customPrices: [
+      {
+        productId: prod0.id,
+        unitPrice: 777,
+        customDescription: 'CUSTOMER-VIP LOCK NUT SPEC A',
+      },
+    ],
+  };
+  const supplier = seed.suppliers.find((s) => s.id === order.supplierId)!;
+  const bank = seed.bankAccounts.find((b) => b.id === order.bankAccountId)!;
+
+  // 1. Pricing resolver returns customDescription for mapped product and undefined otherwise
+  const r0 = resolveCustomerProductPricing(customCustomer, prod0, 100, 'JPY', 1);
+  assert.equal(r0.customDescription, 'CUSTOMER-VIP LOCK NUT SPEC A');
+  const r1 = resolveCustomerProductPricing(customCustomer, prod1, 100, 'JPY', 1);
+  assert.equal(r1.customDescription, undefined);
+
+  // 2. applyCustomerPricingToItems updates description on customer switch and falls back to prod.nameEn for unmapped products
+  const updatedItems = applyCustomerPricingToItems(order.items, customCustomer, seed.products);
+  assert.equal(updatedItems[0].description, 'CUSTOMER-VIP LOCK NUT SPEC A');
+
+  // preserveDescription keeps manual edits during currency changes
+  const withManualEdit = [{ ...updatedItems[0], description: 'MANUAL OVERRIDE NAME' }];
+  const preserved = applyCustomerPricingToItems(withManualEdit, customCustomer, seed.products, 'USD', 150, {
+    preserveDescription: true,
+  });
+  assert.equal(preserved[0].description, 'MANUAL OVERRIDE NAME');
+
+  // 3. Formal Excel workbook (INVOICE, PACKING LIST, CONTRACT) renders customDescription
+  const wb = buildFormalDocumentWorkbook(order, {
+    customer: customCustomer,
+    billToCustomer: customCustomer,
+    supplier,
+    bank,
+    products: seed.products,
+    docLang: 'en',
+  });
+  assert.ok(XLSX.utils.sheet_to_csv(wb.Sheets['INVOICE']).includes('CUSTOMER-VIP LOCK NUT SPEC A'));
+  assert.ok(XLSX.utils.sheet_to_csv(wb.Sheets['PACKING LIST']).includes('CUSTOMER-VIP LOCK NUT SPEC A'));
+  assert.ok(XLSX.utils.sheet_to_csv(wb.Sheets['CONTRACT']).includes('CUSTOMER-VIP LOCK NUT SPEC A'));
+
+  // 4. Contract Word (.docx) renders customDescription
+  const docxBytes = await buildContractDocxBuffer(order, {
+    customer: customCustomer,
+    billToCustomer: customCustomer,
+    supplier,
+    products: seed.products,
+    docLang: 'en',
+    contractSettings: createDefaultContractSettings(),
+  });
+  const docXml = new PizZip(docxBytes).file('word/document.xml')?.asText() ?? '';
+  assert.ok(docXml.includes('CUSTOMER-VIP LOCK NUT SPEC A'));
+});
+
 
 
