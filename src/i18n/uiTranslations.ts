@@ -28,6 +28,10 @@ export interface UiDictionary {
   itemsSectionTitle: string;
   addProductLabel: string;
   btnAddCustomItem: string;
+  colSeqNo: string;
+  dragToReorderHint: string;
+  moveItemUpLabel: string;
+  moveItemDownLabel: string;
   colSku: string;
   colDescription: string;
   colHsCode: string;
@@ -353,6 +357,10 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     itemsSectionTitle: '出口产品明细（自动联动重量、体积与货值）',
     addProductLabel: '从产品库快速添加',
     btnAddCustomItem: '添加空白行',
+    colSeqNo: '序号',
+    dragToReorderHint: '按住序号拖拽调整产品前后顺序',
+    moveItemUpLabel: '上移一行',
+    moveItemDownLabel: '下移一行',
     colSku: '型号 / SKU',
     colDescription: '品名与规格',
     colHsCode: 'HS编码',
@@ -681,6 +689,10 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     itemsSectionTitle: '輸出明細（重量・容積・金額を自動連動）',
     addProductLabel: '製品マスタから追加',
     btnAddCustomItem: '空行を追加',
+    colSeqNo: 'No.',
+    dragToReorderHint: '番号をドラッグして製品の並び順を変更',
+    moveItemUpLabel: '上へ移動',
+    moveItemDownLabel: '下へ移動',
     colSku: '型番 / SKU',
     colDescription: '品名・仕様',
     colHsCode: 'HSコード',
@@ -1009,6 +1021,10 @@ export const UI_TEXT: Record<UiLanguage, UiDictionary> = {
     itemsSectionTitle: 'Line Items (Linked Weight, CBM & Value)',
     addProductLabel: 'Add from Product Catalog',
     btnAddCustomItem: 'Add Blank Row',
+    colSeqNo: '#',
+    dragToReorderHint: 'Drag number handle to reorder products',
+    moveItemUpLabel: 'Move row up',
+    moveItemDownLabel: 'Move row down',
     colSku: 'SKU / Part No.',
     colDescription: 'Description',
     colHsCode: 'HS Code',

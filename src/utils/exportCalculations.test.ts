@@ -9,6 +9,7 @@ import {
   formatNumberNoRound,
   getDefaultExchangeRate,
   getIncotermFlags,
+  reorderOrderItems,
   resolveEffectiveExchangeRate,
   validateErpBackupPayload,
 } from './exportCalculations';
@@ -281,5 +282,16 @@ test('autoConsolidateHalfCartons pairs compatible half-carton items and calculat
   // Single carton vol = 0.33 * 0.25 * 0.12 = 0.0099 m3; 2 physical cartons = 0.0198 m3 (exact, unrounded)
   assert.equal(summary.cartonsCbm, 0.0198);
 });
+
+test('reorderOrderItems moves items cleanly without mutating original array and ignores invalid indices', () => {
+  const arr = ['A', 'B', 'C', 'D'];
+  assert.deepEqual(reorderOrderItems(arr, 0, 2), ['B', 'C', 'A', 'D']);
+  assert.deepEqual(reorderOrderItems(arr, 3, 1), ['A', 'D', 'B', 'C']);
+  assert.deepEqual(arr, ['A', 'B', 'C', 'D']);
+  assert.equal(reorderOrderItems(arr, 1, 1), arr);
+  assert.equal(reorderOrderItems(arr, -1, 2), arr);
+  assert.equal(reorderOrderItems(arr, 0, 99), arr);
+});
+
 
 

@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
   Layers,
+  GripVertical,
 } from 'lucide-react';
 import type {
   BankAccount,
@@ -39,6 +40,7 @@ import {
   formatNumberNoRound,
   getDefaultExchangeRate,
   getItemFillRatio,
+  reorderOrderItems,
   resolveEffectiveExchangeRate,
 } from '../utils/exportCalculations';
 import { buildPackingListDisplayRows, resolveItemSpecs } from '../utils/documentHelpers';
@@ -107,6 +109,8 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
     products[0]?.id ?? '',
   );
   const [showDocLayoutEditor, setShowDocLayoutEditor] = useState<boolean>(false);
+  const [draggedItemIdx, setDraggedItemIdx] = useState<number | null>(null);
+  const [dragOverItemIdx, setDragOverItemIdx] = useState<number | null>(null);
 
   const effectiveSelectedProductId = products.some(
     (p) => p.id === selectedProductId,
@@ -622,6 +626,13 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
     onChangeOrder(buildOrderWithPalletSync(remaining));
   };
 
+  const handleReorderItems = (fromIdx: number, toIdx: number) => {
+    const reordered = reorderOrderItems(order.items, fromIdx, toIdx);
+    if (reordered !== order.items) {
+      updateOrder({ items: reordered });
+    }
+  };
+
   const modeFieldLabels = (() => {
     switch (order.shipping.mode) {
       case 'SEA':
@@ -981,9 +992,12 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               {t.emptyItems}
             </div>
           ) : (
-            <table className="w-full text-left border-collapse min-w-[1040px]">
+            <table className="w-full text-left border-collapse min-w-[1100px]">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+                  <th className="py-2.5 px-2 w-16 text-center whitespace-nowrap">
+                    {t.colSeqNo}
+                  </th>
                   <th className="py-2.5 px-3 min-w-[144px]">{t.colSku}</th>
                   <th className="py-2.5 px-3 min-w-[240px]">{t.colDescription}</th>
                   <th className="py-2.5 px-3 min-w-[104px]">{t.colHsCode}</th>
@@ -999,8 +1013,111 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               <tbody className="divide-y divide-slate-100 text-sm">
                 {order.items.map((item, idx) => {
                   const calc = summary.lineItems[idx];
+                  const isDragging = draggedItemIdx === idx;
+                  const isDragOver =
+                    dragOverItemIdx === idx &&
+                    draggedItemIdx !== null &&
+                    draggedItemIdx !== idx;
                   return (
-                    <tr key={item.id} className="hover:bg-slate-50/70">
+                    <tr
+                      key={item.id}
+                      data-testid={`item-row-${idx}`}
+                      onDragOver={(e) => {
+                        if (draggedItemIdx === null) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (dragOverItemIdx !== idx) {
+                          setDragOverItemIdx(idx);
+                        }
+                      }}
+                      onDragEnter={(e) => {
+                        if (draggedItemIdx === null) return;
+                        e.preventDefault();
+                        if (dragOverItemIdx !== idx) {
+                          setDragOverItemIdx(idx);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromText = e.dataTransfer.getData('text/plain');
+                        const parsedFrom =
+                          fromText !== '' ? Number(fromText) : draggedItemIdx;
+                        if (
+                          parsedFrom !== null &&
+                          Number.isInteger(parsedFrom)
+                        ) {
+                          handleReorderItems(parsedFrom, idx);
+                        }
+                        setDraggedItemIdx(null);
+                        setDragOverItemIdx(null);
+                      }}
+                      className={`transition-colors ${
+                        isDragging
+                          ? 'opacity-45 bg-blue-50/40'
+                          : isDragOver
+                            ? 'bg-blue-50/70 ring-2 ring-inset ring-blue-500'
+                            : 'hover:bg-slate-50/70'
+                      }`}
+                    >
+                      <td className="py-2 px-2 align-top text-center select-none">
+                        <div className="flex flex-col items-center gap-1">
+                          <div
+                            draggable
+                            data-testid={`item-drag-handle-${idx}`}
+                            title={t.dragToReorderHint}
+                            aria-label={`${t.colSeqNo} ${idx + 1} - ${t.dragToReorderHint}`}
+                            onDragStart={(e) => {
+                              setDraggedItemIdx(idx);
+                              setDragOverItemIdx(idx);
+                              e.dataTransfer.effectAllowed = 'move';
+                              e.dataTransfer.setData('text/plain', String(idx));
+                              const rowEl = e.currentTarget.closest('tr');
+                              if (rowEl && e.dataTransfer.setDragImage) {
+                                e.dataTransfer.setDragImage(rowEl, 24, 20);
+                              }
+                            }}
+                            onDragEnd={() => {
+                              setDraggedItemIdx(null);
+                              setDragOverItemIdx(null);
+                            }}
+                            className="inline-flex items-center justify-center gap-0.5 h-8 px-1.5 min-w-[46px] rounded border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 text-slate-700 cursor-grab active:cursor-grabbing transition-colors"
+                          >
+                            <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span
+                              data-testid={`item-seq-${idx}`}
+                              className="text-xs font-mono-tabular font-bold"
+                            >
+                              {idx + 1}
+                            </span>
+                          </div>
+                          {order.items.length > 1 && (
+                            <div className="inline-flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                data-testid={`item-move-up-${idx}`}
+                                disabled={idx === 0}
+                                onClick={() => handleReorderItems(idx, idx - 1)}
+                                aria-label={`${t.moveItemUpLabel} ${idx + 1}`}
+                                title={t.moveItemUpLabel}
+                                className="p-0.5 rounded text-slate-400 hover:text-blue-700 hover:bg-blue-50 disabled:opacity-25 disabled:pointer-events-none"
+                              >
+                                <ChevronUp className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                data-testid={`item-move-down-${idx}`}
+                                disabled={idx === order.items.length - 1}
+                                onClick={() => handleReorderItems(idx, idx + 1)}
+                                aria-label={`${t.moveItemDownLabel} ${idx + 1}`}
+                                title={t.moveItemDownLabel}
+                                className="p-0.5 rounded text-slate-400 hover:text-blue-700 hover:bg-blue-50 disabled:opacity-25 disabled:pointer-events-none"
+                              >
+                                <ChevronDown className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-2 px-3 align-top space-y-1">
                         <input
                           type="text"

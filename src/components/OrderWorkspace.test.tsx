@@ -729,5 +729,34 @@ test('TopHeader renders clickable breadcrumb navigation and customer part names 
   }
 });
 
+test('OrderWorkspace renders 1, 2, 3... sequence numbers with draggable handles and up/down reorder buttons', () => {
+  const seed = createInitialErpState();
+  const order = seed.orders[0];
+  const html = renderToStaticMarkup(
+    <OrderWorkspace
+      order={order}
+      customers={seed.customers}
+      suppliers={seed.suppliers}
+      logisticsProviders={seed.logisticsProviders}
+      bankAccounts={seed.bankAccounts}
+      products={seed.products}
+      onChangeOrder={() => {}}
+      onCreateNewOrder={() => {}}
+      onDuplicateOrder={() => {}}
+      onOpenDocuments={() => {}}
+      onOpenHistory={() => {}}
+      t={UI_TEXT.zh}
+    />,
+  );
+  assert.match(html, />序号<\/th>/);
+  assert.match(html, /draggable="true"[^>]*data-testid="item-drag-handle-0"/);
+  assert.match(html, /data-testid="item-seq-0"[^>]*>1</);
+  assert.match(html, /data-testid="item-seq-1"[^>]*>2</);
+  assert.match(html, /data-testid="item-seq-2"[^>]*>3</);
+  assert.match(html, /data-testid="item-move-up-0"[^>]*disabled/);
+  assert.match(html, /data-testid="item-move-down-0"/);
+});
+
+
 
 

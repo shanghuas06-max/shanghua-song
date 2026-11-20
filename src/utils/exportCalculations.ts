@@ -758,3 +758,27 @@ export function resolveActiveOrder(
   if (!Array.isArray(orders) || orders.length === 0) return undefined;
   return orders.find((o) => o.id === activeOrderId) ?? orders[0];
 }
+
+export function reorderOrderItems<T>(
+  items: T[],
+  fromIndex: number,
+  toIndex: number,
+): T[] {
+  if (!Array.isArray(items) || items.length < 2) return items;
+  if (
+    !Number.isInteger(fromIndex) ||
+    !Number.isInteger(toIndex) ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= items.length ||
+    toIndex >= items.length ||
+    fromIndex === toIndex
+  ) {
+    return items;
+  }
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
