@@ -616,5 +616,108 @@ test('customer-specific part name (customDescription) populates order items and 
   assert.ok(docXml.includes('CUSTOMER-VIP LOCK NUT SPEC A'));
 });
 
+import { sanitizeOrderPayload, sanitizePriceTiers } from './firestoreSanitizers';
+
+test('no-rounding: pricing, product import, formal Excel numFmt, and Firestore sanitizers preserve exact decimal inputs', () => {
+  const seed = createInitialErpState();
+  const baseProd = {
+    ...seed.products[0],
+    unitPrice: 12.5,
+    currency: 'JPY' as const,
+    tieredPrices: [{ minQty: 10.5, maxQty: 99.5, unitPrice: 11.25 }],
+  };
+
+  // 1. Pricing keeps JPY decimals and 4-decimal USD conversion without rounding
+  const jpyTier = resolveCustomerProductPricing(undefined, baseProd, 50, 'JPY', 1);
+  assert.equal(jpyTier.unitPrice, 11.25);
+  const usdConverted = resolveCustomerProductPricing(undefined, baseProd, 50, 'USD', 150);
+  // 11.25 / 150 = 0.075 (exact)
+  assert.equal(usdConverted.unitPrice, 0.075);
+
+  const usdPrecision = resolveCustomerProductPricing(
+    undefined,
+    { ...baseProd, tieredPrices: [], unitPrice: 12.825 },
+    10,
+    'USD',
+    150,
+  );
+  // 12.825 / 150 = 0.0855
+  assert.equal(usdPrecision.unitPrice, 0.0855);
+
+  // 2. Product import keeps decimal unitsPerCarton and weights/prices
+  const imported = mapImportedProductRows(
+    [
+      {
+        产品编号: 'NO-ROUND-SKU',
+        英文品名: 'Precision Nut',
+        基础单价: '123.4567',
+        每箱数量: '12.5',
+        单件净重: '0.00895',
+      },
+    ],
+    [],
+  );
+  assert.equal(imported.errors.length, 0);
+  assert.equal(imported.products[0].unitPrice, 123.4567);
+  assert.equal(imported.products[0].defaultUnitsPerCarton, 12.5);
+  assert.equal(imported.products[0].unitNetWeightKg, 0.00895);
+
+  // 3. Formal Excel workbook preserves decimal values and dynamic numFmt (never truncates decimals)
+  const customer = seed.customers[0];
+  const supplier = seed.suppliers[0];
+  const bank = seed.bankAccounts[0];
+  const decimalOrder = {
+    ...seed.orders[0],
+    currency: 'JPY' as const,
+    exchangeRate: 1,
+    palletCount: 1.5,
+    items: [
+      {
+        ...seed.orders[0].items[0],
+        quantity: 3,
+        unitPrice: 333.4,
+        cartons: 1.5,
+        unitNetWeightKg: 0.00895,
+      },
+    ],
+    costs: {
+      ...seed.orders[0].costs,
+      packingHandlingCost: 100.25,
+      inlandFreightCost: 0,
+      mainFreightCost: 0,
+    },
+  };
+  const wb = buildFormalDocumentWorkbook(decimalOrder, {
+    customer,
+    billToCustomer: customer,
+    supplier,
+    bank,
+    products: seed.products,
+    docLang: 'en',
+  });
+  const invSheet = wb.Sheets['INVOICE'];
+  const invCells = Object.values(invSheet).filter(
+    (c): c is { v?: unknown; s?: { numFmt?: string } } =>
+      Boolean(c && typeof c === 'object' && 'v' in c),
+  );
+  const priceCell = invCells.find((c) => c.v === 333.4);
+  const amountCell = invCells.find((c) => c.v === 1000.2);
+  const uwCell = invCells.find((c) => c.v === 0.00895);
+  assert.ok(priceCell, 'INVOICE sheet should preserve decimal JPY unitPrice 333.4');
+  assert.match(priceCell!.s?.numFmt ?? '', /0\.0/);
+  assert.ok(amountCell, 'INVOICE sheet should preserve unrounded amount 1000.2');
+  assert.match(amountCell!.s?.numFmt ?? '', /0\.0/);
+  assert.ok(uwCell, 'INVOICE sheet should preserve 5-decimal U.W 0.00895');
+  assert.match(uwCell!.s?.numFmt ?? '', /0\.00000/);
+
+  // 4. Firestore sanitizers preserve decimals in tiers and order fields
+  const cleanTiers = sanitizePriceTiers([{ minQty: 10.5, maxQty: 99.5, unitPrice: 12.345 }]);
+  assert.deepEqual(cleanTiers, [{ minQty: 10.5, maxQty: 99.5, unitPrice: 12.345 }]);
+  const cleanOrder = sanitizeOrderPayload(decimalOrder, 'owner-1');
+  assert.equal(cleanOrder.items[0].unitPrice, 333.4);
+  assert.equal(cleanOrder.palletCount, 1.5);
+});
+
+
 
 

@@ -6,6 +6,7 @@ import {
   calculateOrderSummary,
   calculatePalletPacking,
   formatMoney,
+  formatNumberNoRound,
   getDefaultExchangeRate,
   getIncotermFlags,
   resolveEffectiveExchangeRate,
@@ -89,11 +90,11 @@ test('includes pallet tare (17 kg/pallet) and pallet volume (1.1x1.1x0.14 CBM/pa
   assert.equal(summary.cartonsGrossWeightKg, 98);
   assert.equal(summary.palletsGrossWeightKg, 34);
   assert.equal(summary.totalGrossWeightKg, 132);
-  // Cartons CBM = 0.54; Pallets CBM = 2 * (1.1 * 1.1 * 0.14 = 0.1694) = 0.3388 -> 0.339
-  // Total CBM = 0.54 + 0.3388 = 0.8788 -> 0.879
+  // Cartons CBM = 0.54; Pallets CBM = 2 * (1.1 * 1.1 * 0.14 = 0.1694) = 0.3388
+  // Total CBM = 0.54 + 0.3388 = 0.8788
   assert.equal(summary.cartonsCbm, 0.54);
-  assert.equal(summary.palletsCbm, 0.339);
-  assert.equal(summary.totalCbm, 0.879);
+  assert.equal(summary.palletsCbm, 0.3388);
+  assert.equal(summary.totalCbm, 0.8788);
 });
 
 test('computes all 10 Incoterms 2020 totals accurately while keeping EXW linked', () => {
@@ -139,21 +140,29 @@ test('computes auto-insurance at 110% of (EXW + inland + main freight) * rate%',
   assert.equal(cif.incotermTotal, 5720 + 31.46);
 });
 
-test('rounds JPY to integers and formats currencies properly', () => {
+test('preserves all user-entered decimal places without rounding for JPY, USD, weights, costs, and formatting', () => {
   const jpyItems: OrderItem[] = [
-    { ...sampleItems[0], quantity: 3, unitPrice: 333.4 },
+    { ...sampleItems[0], quantity: 3, unitPrice: 333.4, unitNetWeightKg: 0.00895 },
   ];
   const jpyCosts: OrderCosts = {
     ...sampleCosts,
-    packingHandlingCost: 1000,
-    inlandFreightCost: 0,
+    packingHandlingCost: 1000.25,
+    inlandFreightCost: 150.75,
     mainFreightCost: 0,
   };
-  const summary = calculateOrderSummary(jpyItems, jpyCosts, 'EXW', 'JPY');
-  assert.equal(summary.goodsSubtotal, 1000);
-  assert.equal(summary.exwTotal, 2000);
-  assert.equal(formatMoney(summary.exwTotal, 'JPY'), '¥2,000');
+  const summary = calculateOrderSummary(jpyItems, jpyCosts, 'FCA', 'JPY', 1.5);
+  assert.equal(summary.goodsSubtotal, 1000.2);
+  assert.equal(summary.exwTotal, 2000.45);
+  assert.equal(summary.incotermTotal, 2151.2);
+  assert.equal(summary.totalNetWeightKg, 0.02685);
+  assert.equal(summary.palletCount, 1.5);
+  assert.equal(formatMoney(1000.2, 'JPY'), '¥1,000.2');
+  assert.equal(formatMoney(2000, 'JPY'), '¥2,000');
   assert.equal(formatMoney(1234.5, 'USD'), '$1,234.50');
+  assert.equal(formatMoney(0.0855, 'USD'), '$0.0855');
+  assert.equal(formatNumberNoRound(12.3456, 1), '12.3456');
+  assert.equal(formatNumberNoRound(12, 1), '12.0');
+  assert.equal(formatNumberNoRound(0.00895, 0), '0.00895');
 });
 
 test('getIncotermFlags distinguishes sea-only vs multimodal Incoterms', () => {
@@ -269,8 +278,8 @@ test('autoConsolidateHalfCartons pairs compatible half-carton items and calculat
   assert.equal(summary.totalNetWeightKg, 21.9);
   // G.W. = 21.9 + 2 * 0.65 = 23.2 kg (tare charged twice, NOT three times)
   assert.equal(summary.cartonsGrossWeightKg, 23.2);
-  // Single carton vol = 0.33 * 0.25 * 0.12 = 0.0099 m3; 2 physical cartons = 0.020 m3 (0.0198 rounded)
-  assert.equal(summary.cartonsCbm, 0.02);
+  // Single carton vol = 0.33 * 0.25 * 0.12 = 0.0099 m3; 2 physical cartons = 0.0198 m3 (exact, unrounded)
+  assert.equal(summary.cartonsCbm, 0.0198);
 });
 
 

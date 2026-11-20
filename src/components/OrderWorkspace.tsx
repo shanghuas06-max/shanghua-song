@@ -34,7 +34,9 @@ import {
   calculateItemCartons,
   calculateOrderSummary,
   calculatePalletPacking,
+  cleanFloat,
   formatMoney,
+  formatNumberNoRound,
   getDefaultExchangeRate,
   getItemFillRatio,
   resolveEffectiveExchangeRate,
@@ -212,7 +214,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
   );
   const effectiveCartonsPerLayer = Math.max(
     1,
-    Math.round(order.cartonsPerLayer ?? 12),
+    Number(order.cartonsPerLayer ?? 12),
   );
 
   const buildOrderWithPalletSync = (
@@ -236,7 +238,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
     const totalCtns = consolidatedSummary.totalCartons;
     const layerSize = Math.max(
       1,
-      Math.round(patch?.cartonsPerLayer ?? order.cartonsPerLayer ?? 12),
+      Number(patch?.cartonsPerLayer ?? order.cartonsPerLayer ?? 12),
     );
     const pack = calculatePalletPacking(totalCtns, {
       cartonsPerLayer: layerSize,
@@ -534,7 +536,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
       sharedCarton: true,
       qty: 100,
       unitWeightKg: firstItem?.unitNetWeightKg || 0.05,
-      totalWeightKg: Number((100 * (firstItem?.unitNetWeightKg || 0.05)).toFixed(1)),
+      totalWeightKg: cleanFloat(100 * (firstItem?.unitNetWeightKg || 0.05)),
     };
     updateOrder({ packingRows: [...existing, newRow] });
   };
@@ -547,8 +549,8 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
         typeof patch.qty === 'number' ||
         typeof patch.unitWeightKg === 'number'
       ) {
-        merged.totalWeightKg = Number(
-          ((merged.qty || 0) * (merged.unitWeightKg || 0)).toFixed(1),
+        merged.totalWeightKg = cleanFloat(
+          (merged.qty || 0) * (merged.unitWeightKg || 0),
         );
       }
       return merged;
@@ -873,8 +875,8 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               <input
                 id="order-exchange-rate"
                 type="number"
-                min={0.01}
-                step="0.01"
+                min={0.0001}
+                step="any"
                 value={effectiveExchangeRate}
                 onChange={(e) =>
                   handleExchangeRateChange(Number(e.target.value))
@@ -1116,6 +1118,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                         <input
                           type="number"
                           min={0}
+                          step="any"
                           aria-label={`${t.colQty} row ${idx + 1}`}
                           value={item.quantity}
                           onChange={(e) =>
@@ -1141,7 +1144,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                         <input
                           type="number"
                           min={0}
-                          step="0.01"
+                          step="any"
                           aria-label={`${t.colUnitPrice} row ${idx + 1}`}
                           value={item.unitPrice}
                           onChange={(e) =>
@@ -1179,7 +1182,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                             <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
                               {jpyHint !== undefined && (
                                 <span className="text-[10px] font-mono-tabular text-slate-400">
-                                  ¥{Math.round(jpyHint).toLocaleString()}
+                                  ¥{formatNumberNoRound(jpyHint, 0)}
                                 </span>
                               )}
                               {resolved?.isCustom && (
@@ -1200,6 +1203,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                         <input
                           type="number"
                           min={0}
+                          step="any"
                           aria-label={`${t.colCartons} row ${idx + 1}`}
                           value={item.cartons}
                           onChange={(e) =>
@@ -1224,7 +1228,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                                     data-testid={`half-carton-badge-${idx}`}
                                     className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 rounded"
                                   >
-                                    {Number(fillRatio.toFixed(2))} ({t.halfCartonBadge})
+                                    {formatNumberNoRound(fillRatio, 0)} ({t.halfCartonBadge})
                                   </span>
                                 </div>
                               )}
@@ -1250,7 +1254,8 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                         })()}
                       </td>
                       <td className="py-2 px-3 align-top text-right font-mono-tabular text-xs text-slate-600 leading-8 whitespace-nowrap">
-                        {calc?.netWeightKg.toFixed(2)} / {calc?.grossWeightKg.toFixed(2)}
+                        {formatNumberNoRound(calc?.netWeightKg ?? 0, 2)} /{' '}
+                        {formatNumberNoRound(calc?.grossWeightKg ?? 0, 2)}
                       </td>
                       <td className="py-2 px-3 align-top text-right font-mono-tabular text-xs font-semibold text-slate-900 leading-8 whitespace-nowrap">
                         {formatMoney(calc?.amount ?? 0, order.currency)}
@@ -1312,10 +1317,11 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               data-testid="order-pallet-count-input"
               type="number"
               min={0}
+              step="any"
               value={order.palletCount ?? 0}
               onChange={(e) =>
                 updateOrder({
-                  palletCount: Math.max(0, Math.round(Number(e.target.value) || 0)),
+                  palletCount: Math.max(0, Number(e.target.value) || 0),
                 })
               }
               className="w-20 h-7 px-2 text-right font-mono-tabular font-semibold text-blue-800 bg-white border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"
@@ -1324,7 +1330,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
           <div>
             <span className="text-slate-500">{t.totalNw}: </span>
             <span className="font-mono-tabular font-semibold text-slate-900">
-              {summary.totalNetWeightKg.toFixed(2)} kg
+              {formatNumberNoRound(summary.totalNetWeightKg, 2)} kg
             </span>
           </div>
           <div>
@@ -1333,7 +1339,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               data-testid="summary-total-gw"
               className="font-mono-tabular font-semibold text-slate-900"
             >
-              {summary.totalGrossWeightKg.toFixed(2)} kg
+              {formatNumberNoRound(summary.totalGrossWeightKg, 2)} kg
             </span>
           </div>
           <div>
@@ -1342,16 +1348,17 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
               data-testid="summary-total-cbm"
               className="font-mono-tabular font-semibold text-slate-900"
             >
-              {summary.totalCbm.toFixed(3)} m³
+              {formatNumberNoRound(summary.totalCbm, 3)} m³
             </span>
           </div>
         </div>
         <div className="px-5 py-1.5 bg-slate-50/70 border-t border-slate-100 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-2">
           <span>{t.palletSpecHint}</span>
           <span className="font-mono-tabular">
-            G.W. = {summary.cartonsGrossWeightKg.toFixed(2)} kg (货+箱) +{' '}
-            {summary.palletsGrossWeightKg.toFixed(2)} kg (托盘) · CBM ={' '}
-            {summary.cartonsCbm.toFixed(3)} + {summary.palletsCbm.toFixed(3)} m³
+            G.W. = {formatNumberNoRound(summary.cartonsGrossWeightKg, 2)} kg (货+箱) +{' '}
+            {formatNumberNoRound(summary.palletsGrossWeightKg, 2)} kg (托盘) · CBM ={' '}
+            {formatNumberNoRound(summary.cartonsCbm, 3)} +{' '}
+            {formatNumberNoRound(summary.palletsCbm, 3)} m³
           </span>
         </div>
 
@@ -1396,11 +1403,12 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                   type="number"
                   min={1}
                   max={60}
+                  step="any"
                   value={effectiveCartonsPerLayer}
                   onChange={(e) => {
                     const nextLayer = Math.max(
                       1,
-                      Math.round(Number(e.target.value) || 12),
+                      Number(e.target.value) || 12,
                     );
                     const nextPack = calculatePalletPacking(summary.totalCartons, {
                       cartonsPerLayer: nextLayer,
@@ -1741,7 +1749,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                 id="cost-packing"
                 type="number"
                 min={0}
-                step="0.01"
+                step="any"
                 value={order.costs.packingHandlingCost}
                 onChange={(e) =>
                   updateCosts({
@@ -1844,7 +1852,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                       id="cost-ins-rate"
                       type="number"
                       min={0}
-                      step="0.05"
+                      step="any"
                       value={order.costs.insuranceRatePercent}
                       onChange={(e) =>
                         updateCosts({
@@ -1966,6 +1974,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                   id="doc-pallet-count"
                   type="number"
                   min={0}
+                  step="any"
                   value={order.palletCount ?? 0}
                   onChange={(e) =>
                     updateOrder({ palletCount: Number(e.target.value) || 0 })
@@ -1985,6 +1994,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                   id="doc-empty-cartons"
                   type="number"
                   min={0}
+                  step="any"
                   value={order.emptyCartons ?? 0}
                   onChange={(e) =>
                     updateOrder({ emptyCartons: Number(e.target.value) || 0 })
@@ -2183,6 +2193,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                             <input
                               type="number"
                               min={0}
+                              step="any"
                               value={row.setsPerCarton}
                               onChange={(e) =>
                                 handleUpdatePackingRow(row.id, {
@@ -2196,6 +2207,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                             <input
                               type="number"
                               min={0}
+                              step="any"
                               value={row.cartonCount}
                               onChange={(e) =>
                                 handleUpdatePackingRow(row.id, {
@@ -2209,6 +2221,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                             <input
                               type="number"
                               min={0}
+                              step="any"
                               value={row.qty}
                               onChange={(e) =>
                                 handleUpdatePackingRow(row.id, {
@@ -2222,7 +2235,7 @@ export const OrderWorkspace: React.FC<OrderWorkspaceProps> = ({
                             <input
                               type="number"
                               min={0}
-                              step="0.0001"
+                              step="any"
                               value={row.unitWeightKg}
                               onChange={(e) =>
                                 handleUpdatePackingRow(row.id, {
@@ -2290,7 +2303,7 @@ const CostRowInput: React.FC<CostRowInputProps> = ({
       id={id}
       type="number"
       min={0}
-      step="0.01"
+      step="any"
       value={value}
       onChange={(e) => onChange(Number(e.target.value) || 0)}
       className={`w-32 h-8 px-2.5 text-right text-sm font-mono-tabular border rounded-md shrink-0 ${

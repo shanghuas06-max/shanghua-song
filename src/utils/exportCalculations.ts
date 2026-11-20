@@ -50,13 +50,27 @@ export interface PalletPackingResult {
   palletThreshold: number;
 }
 
+export function cleanFloat(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (Object.is(value, -0) || value === 0) return 0;
+  return Number(value.toPrecision(12));
+}
+
+export function formatNumberNoRound(value: number, minDecimals = 0): string {
+  const safe = cleanFloat(Number.isFinite(value) ? value : 0);
+  return safe.toLocaleString('en-US', {
+    minimumFractionDigits: minDecimals,
+    maximumFractionDigits: 10,
+  });
+}
+
 export function calculateItemCartons(
   quantity: number,
   unitsPerCarton: number,
 ): number {
   const safeQty = Math.max(0, Number(quantity) || 0);
   if (safeQty <= 0) return 0;
-  const perCarton = Math.max(1, Math.round(Number(unitsPerCarton) || 1));
+  const perCarton = Math.max(0.0001, Number(unitsPerCarton) || 1);
   return Math.ceil(safeQty / perCarton);
 }
 
@@ -73,9 +87,9 @@ export function getItemEffectiveSetsPerCarton(
   const qty = Math.max(0, Number(item.quantity) || 0);
   const ctns = Math.max(0, Number(item.cartons) || 0);
   if (qty > 0 && ctns > 0) {
-    return Math.max(1, Math.ceil(qty / ctns));
+    return cleanFloat(qty / ctns);
   }
-  return Math.max(1, Math.round(qty) || 1);
+  return qty > 0 ? qty : 1;
 }
 
 export function getItemFillRatio(item: OrderItem, product?: Product): number {
@@ -359,22 +373,16 @@ export interface OrderCalculationSummary {
   flags: IncotermCostFlags;
 }
 
-export function roundByCurrency(value: number, currency: CurrencyCode): number {
-  if (!Number.isFinite(value)) return 0;
-  if (currency === 'JPY') {
-    return Math.round(value);
-  }
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+export function roundByCurrency(value: number, _currency: CurrencyCode): number {
+  return cleanFloat(value);
 }
 
 export function roundWeight(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return cleanFloat(value);
 }
 
 export function roundCbm(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+  return cleanFloat(value);
 }
 
 export function getIncotermFlags(incoterm: IncotermCode): IncotermCostFlags {
@@ -486,10 +494,10 @@ export function calculateOrderSummary(
   items: OrderItem[],
   costs: OrderCosts,
   incoterm: IncotermCode,
-  currency: CurrencyCode,
+  _currency: CurrencyCode,
   palletCount = 0,
 ): OrderCalculationSummary {
-  const safePalletCount = Math.max(0, Math.round(Number(palletCount) || 0));
+  const safePalletCount = Math.max(0, Number(palletCount) || 0);
 
   const singleCartonVols = items.map(
     (item) =>
@@ -514,10 +522,10 @@ export function calculateOrderSummary(
     const qty = Math.max(0, Number(item.quantity) || 0);
     const price = Math.max(0, Number(item.unitPrice) || 0);
     const cartons = Math.max(0, Number(item.cartons) || 0);
-    const amount = roundByCurrency(qty * price, currency);
-    const netWeightKg = roundWeight(qty * Math.max(0, Number(item.unitNetWeightKg) || 0));
-    const grossWeightKg = roundWeight(netWeightKg + cartons * CARTON_TARE_WEIGHT_KG);
-    const cbm = roundCbm(cartons * singleCartonVols[idx]);
+    const amount = cleanFloat(qty * price);
+    const netWeightKg = cleanFloat(qty * Math.max(0, Number(item.unitNetWeightKg) || 0));
+    const grossWeightKg = cleanFloat(netWeightKg + cartons * CARTON_TARE_WEIGHT_KG);
+    const cbm = cleanFloat(cartons * singleCartonVols[idx]);
     return {
       id: item.id,
       amount,
@@ -615,67 +623,62 @@ export function calculateOrderSummary(
             : 0;
       lineItems[idx] = {
         ...lineItems[idx],
-        cbm: roundCbm(physicalGroupVol * ratioShare),
+        cbm: cleanFloat(physicalGroupVol * ratioShare),
       };
     });
   });
 
-  const totalQuantity = lineItems.reduce(
-    (acc, _, idx) => acc + Math.max(0, Number(items[idx].quantity) || 0),
-    0,
+  const totalQuantity = cleanFloat(
+    lineItems.reduce(
+      (acc, _, idx) => acc + Math.max(0, Number(items[idx].quantity) || 0),
+      0,
+    ),
   );
-  const totalCartons = Math.max(0, consolidatedCartons);
-  const totalNetWeightKg = roundWeight(
+  const totalCartons = cleanFloat(Math.max(0, consolidatedCartons));
+  const totalNetWeightKg = cleanFloat(
     lineItems.reduce((acc, l) => acc + l.netWeightKg, 0),
   );
-  const cartonsGrossWeightKg = roundWeight(
+  const cartonsGrossWeightKg = cleanFloat(
     totalNetWeightKg + totalCartons * CARTON_TARE_WEIGHT_KG,
   );
-  const palletsGrossWeightKg = roundWeight(safePalletCount * PALLET_WEIGHT_KG);
-  const totalGrossWeightKg = roundWeight(
+  const palletsGrossWeightKg = cleanFloat(safePalletCount * PALLET_WEIGHT_KG);
+  const totalGrossWeightKg = cleanFloat(
     cartonsGrossWeightKg + palletsGrossWeightKg,
   );
-  const cartonsCbm = roundCbm(totalRawCbm);
+  const cartonsCbm = cleanFloat(totalRawCbm);
   const rawPalletsCbm = safePalletCount * PALLET_VOLUME_CBM;
-  const palletsCbm = roundCbm(rawPalletsCbm);
-  const totalCbm = roundCbm(totalRawCbm + rawPalletsCbm);
+  const palletsCbm = cleanFloat(rawPalletsCbm);
+  const totalCbm = cleanFloat(totalRawCbm + rawPalletsCbm);
 
-  const goodsSubtotal = roundByCurrency(
+  const goodsSubtotal = cleanFloat(
     lineItems.reduce((acc, l) => acc + l.amount, 0),
-    currency,
   );
-  const packingHandlingCost = roundByCurrency(
+  const packingHandlingCost = cleanFloat(
     Math.max(0, Number(costs.packingHandlingCost) || 0),
-    currency,
   );
-  const exwTotal = roundByCurrency(goodsSubtotal + packingHandlingCost, currency);
+  const exwTotal = cleanFloat(goodsSubtotal + packingHandlingCost);
 
-  const inlandFreightCost = roundByCurrency(
+  const inlandFreightCost = cleanFloat(
     Math.max(0, Number(costs.inlandFreightCost) || 0),
-    currency,
   );
-  const mainFreightCost = roundByCurrency(
+  const mainFreightCost = cleanFloat(
     Math.max(0, Number(costs.mainFreightCost) || 0),
-    currency,
   );
-  const destinationHandlingCost = roundByCurrency(
+  const destinationHandlingCost = cleanFloat(
     Math.max(0, Number(costs.destinationHandlingCost) || 0),
-    currency,
   );
-  const importDutyTaxCost = roundByCurrency(
+  const importDutyTaxCost = cleanFloat(
     Math.max(0, Number(costs.importDutyTaxCost) || 0),
-    currency,
   );
 
   let insuranceCost = 0;
   if (costs.insuranceMode === 'AUTO_PERCENT') {
     const rate = Math.max(0, Number(costs.insuranceRatePercent) || 0);
     const insuredBase = (exwTotal + inlandFreightCost + mainFreightCost) * 1.1;
-    insuranceCost = roundByCurrency((insuredBase * rate) / 100, currency);
+    insuranceCost = cleanFloat((insuredBase * rate) / 100);
   } else {
-    insuranceCost = roundByCurrency(
+    insuranceCost = cleanFloat(
       Math.max(0, Number(costs.insuranceManualCost) || 0),
-      currency,
     );
   }
 
@@ -688,7 +691,7 @@ export function calculateOrderSummary(
   if (flags.includesDestinationHandling) incotermTotal += destinationHandlingCost;
   if (flags.includesImportDuty) incotermTotal += importDutyTaxCost;
 
-  incotermTotal = roundByCurrency(incotermTotal, currency);
+  incotermTotal = cleanFloat(incotermTotal);
 
   return {
     lineItems,
@@ -717,11 +720,11 @@ export function calculateOrderSummary(
 }
 
 export function formatMoney(amount: number, currency: CurrencyCode): string {
-  const safe = Number.isFinite(amount) ? amount : 0;
-  const decimals = currency === 'JPY' ? 0 : 2;
+  const safe = cleanFloat(Number.isFinite(amount) ? amount : 0);
+  const minDecimals = currency === 'JPY' ? 0 : 2;
   const formatted = safe.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: minDecimals,
+    maximumFractionDigits: 10,
   });
   switch (currency) {
     case 'USD':

@@ -394,7 +394,7 @@ export function subscribeUserWorkspace(
                 currency,
                 raw.exchangeRate as number | undefined,
               ),
-              cartonsPerLayer: Math.max(1, Math.round(Number(raw.cartonsPerLayer) || 12)),
+              cartonsPerLayer: Math.max(1, Number(raw.cartonsPerLayer) || 12),
               docOverrides: sanitizeDocOverrides(raw.docOverrides),
               docSpecialFields: sanitizeDocSpecialFields(raw.docSpecialFields),
               createdAt: String(raw.orderCreatedAt ?? raw.createdAt ?? ''),

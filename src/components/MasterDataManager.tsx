@@ -1126,7 +1126,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                           id="cust-price-value"
                           type="number"
                           min={0}
-                          step="0.01"
+                          step="any"
                           value={customPriceValue}
                           onChange={(e) =>
                             setCustomPriceValue(Number(e.target.value) || 0)
@@ -1193,7 +1193,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                               <input
                                 type="number"
                                 min={0}
-                                step="0.01"
+                                step="any"
                                 aria-label={`${t.customPricingPriceLabel} ${prod?.sku ?? cp.productId}`}
                                 value={cp.unitPrice}
                                 onChange={(e) => {
@@ -1930,7 +1930,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                 id="prod-price"
                 label={t.colUnitPrice}
                 value={editingProduct.unitPrice}
-                step="0.01"
+                step="any"
                 onChange={(v) =>
                   setEditingProduct({ ...editingProduct, unitPrice: v })
                 }
@@ -1972,7 +1972,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                 id="prod-per-ctn"
                 label={t.lblUnitsPerCarton}
                 value={editingProduct.defaultUnitsPerCarton}
-                step="1"
+                step="any"
                 onChange={(v) =>
                   setEditingProduct({
                     ...editingProduct,
@@ -1986,7 +1986,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                 id="prod-nw"
                 label={t.lblUnitNw}
                 value={editingProduct.unitNetWeightKg}
-                step="0.001"
+                step="any"
                 onChange={(v) =>
                   setEditingProduct({
                     ...editingProduct,
@@ -1998,7 +1998,7 @@ export const MasterDataManager: React.FC<MasterDataManagerProps> = ({
                 id="prod-gw"
                 label={t.lblUnitGw}
                 value={editingProduct.unitGrossWeightKg}
-                step="0.001"
+                step="any"
                 onChange={(v) =>
                   setEditingProduct({
                     ...editingProduct,
@@ -2231,7 +2231,7 @@ const FieldNumber: React.FC<{
   value: number;
   step?: string;
   onChange: (val: number) => void;
-}> = ({ id, label, value, step = '1', onChange }) => (
+}> = ({ id, label, value, step = 'any', onChange }) => (
   <div>
     <label
       htmlFor={id}
@@ -2296,6 +2296,7 @@ const TieredPricingInlineEditor: React.FC<{
           <input
             type="number"
             min={0}
+            step="any"
             aria-label={`${t.tierMinQty} ${idx + 1}`}
             placeholder={t.tierMinQty}
             value={tier.minQty}
@@ -2312,6 +2313,7 @@ const TieredPricingInlineEditor: React.FC<{
           <input
             type="number"
             min={0}
+            step="any"
             aria-label={`${t.tierMaxQty} ${idx + 1}`}
             placeholder={t.tierUnlimited}
             value={tier.maxQty ?? ''}
@@ -2329,7 +2331,7 @@ const TieredPricingInlineEditor: React.FC<{
           <input
             type="number"
             min={0}
-            step="0.01"
+            step="any"
             aria-label={`${t.tierUnitPrice} ${idx + 1}`}
             placeholder={t.tierUnitPrice}
             value={tier.unitPrice}

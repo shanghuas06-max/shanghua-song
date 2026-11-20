@@ -19,11 +19,17 @@ test('formatDocumentDate formats English and CJK dates properly', () => {
   assert.equal(formatDocumentDate('', 'en'), '—');
 });
 
-test('formatCurrencyLabel and formatDocMoney match HARDLOCK Invoice notation', () => {
+import { numberToContractWords } from './contractDefaults';
+
+test('formatCurrencyLabel and formatDocMoney match HARDLOCK Invoice notation without rounding decimals', () => {
   assert.equal(formatCurrencyLabel('CNY'), 'CNY (RMB)');
   assert.equal(formatCurrencyLabel('USD'), 'USD ($)');
   assert.equal(formatDocMoney(2790, 'CNY'), 'CNY 2,790.00');
   assert.equal(formatDocMoney(125000, 'JPY'), 'JPY 125,000');
+  assert.equal(formatDocMoney(125.75, 'JPY'), 'JPY 125.75');
+  assert.equal(formatDocMoney(0.0855, 'USD'), 'USD 0.0855');
+  assert.match(numberToContractWords(125.75, 'JPY'), /POINT SEVEN FIVE/);
+  assert.match(numberToContractWords(10.125, 'USD'), /POINT ONE TWO FIVE/);
 });
 
 test('parseProductSpecFallback extracts Size, Material, and Surface Finish from SKU', () => {
@@ -258,4 +264,141 @@ test('buildPackingListDisplayRows groups sharedCartonGroupId half-carton items i
   assert.equal(display[1].isSubRowInSameCtn, true);
   assert.equal(display[1].setsPerCarton, 200);
 });
+
+test('buildPackingListDisplayRows packs full pallets first, then minimizes product kinds and splits via exact-sum grouping', () => {
+  const mkItem = (
+    id: string,
+    sku: string,
+    cartons: number,
+    setsPerCarton = 100,
+    sharedCartonGroupId?: string,
+    quantity?: number,
+  ): OrderItem => ({
+    id,
+    productId: '',
+    sku,
+    description: sku,
+    size: 'M16x2.0',
+    material: 'SS400',
+    surfaceFinish: 'CR3',
+    hsCode: '7318.16.00',
+    quantity: quantity ?? cartons * setsPerCarton,
+    unit: 'SETS',
+    unitPrice: 2,
+    cartons,
+    setsPerCarton,
+    sharedCartonGroupId,
+    unitNetWeightKg: 0.05,
+    unitGrossWeightKg: 0.055,
+    cartonLengthCm: 33,
+    cartonWidthCm: 25,
+    cartonHeightCm: 12,
+    originCountry: 'JAPAN',
+    palletNo: '',
+    cartonRange: '',
+  });
+
+  // Case A: Full pallets first (Item 2: 60, Item 4: 130 -> 60+60+10), then exact 60 remainder pair (Item 1: 15 + Item 3: 45 = 60), then Item 4 rem (10)
+  const caseA = buildPackingListDisplayRows(
+    [
+      mkItem('a1', 'SKU-1', 15),
+      mkItem('a2', 'SKU-2', 60),
+      mkItem('a3', 'SKU-3', 45),
+      mkItem('a4', 'SKU-4', 130),
+    ],
+    [],
+  );
+  assert.deepEqual(
+    caseA.map((r) => ({
+      palletNo: r.palletNo,
+      itemNo: r.itemNo,
+      ctnNo: r.ctnNo,
+      cartonCount: r.cartonCount,
+      qty: r.qty,
+    })),
+    [
+      { palletNo: 'Pallet 1', itemNo: 2, ctnNo: '1 - 60', cartonCount: 60, qty: 6000 },
+      { palletNo: 'Pallet 2', itemNo: 4, ctnNo: '61 - 120', cartonCount: 60, qty: 6000 },
+      { palletNo: 'Pallet 3', itemNo: 4, ctnNo: '121 - 180', cartonCount: 60, qty: 6000 },
+      { palletNo: 'Pallet 4', itemNo: 1, ctnNo: '181 - 195', cartonCount: 15, qty: 1500 },
+      { palletNo: 'Pallet 4', itemNo: 3, ctnNo: '196 - 240', cartonCount: 45, qty: 4500 },
+      { palletNo: 'Pallet 5', itemNo: 4, ctnNo: '241 - 250', cartonCount: 10, qty: 1000 },
+    ],
+  );
+  assert.equal(caseA[3].palletRowSpan, 2);
+  assert.equal(caseA[4].showPalletCell, false);
+
+  // Case B: Exact-fit subset chooses minimum product kinds per pallet (20+40=60 [2 kinds] before 10+15+15+20=60 [4 kinds])
+  const caseB = buildPackingListDisplayRows(
+    [
+      mkItem('b1', 'B-10', 10),
+      mkItem('b2', 'B-20A', 20),
+      mkItem('b3', 'B-15A', 15),
+      mkItem('b4', 'B-40', 40),
+      mkItem('b5', 'B-15B', 15),
+      mkItem('b6', 'B-20B', 20),
+    ],
+    [],
+  );
+  const p1Items = caseB.filter((r) => r.palletNo === 'Pallet 1');
+  const p2Items = caseB.filter((r) => r.palletNo === 'Pallet 2');
+  assert.equal(p1Items.length, 2, 'Pallet 1 should pick the 2-product exact pair (20 + 40 = 60)');
+  assert.equal(p1Items.reduce((s, r) => s + r.cartonCount, 0), 60);
+  assert.equal(p2Items.length, 4);
+  assert.equal(p2Items.reduce((s, r) => s + r.cartonCount, 0), 60);
+
+  // Case C: Non-exact remainders [45, 30, 20, 12] fill Pallet 1 to 60 with 2 kinds (45 + 15) and only 1 split
+  const caseC = buildPackingListDisplayRows(
+    [
+      mkItem('c1', 'C-45', 45),
+      mkItem('c2', 'C-30', 30),
+      mkItem('c3', 'C-20', 20),
+      mkItem('c4', 'C-12', 12),
+    ],
+    [],
+  );
+  const cp1 = caseC.filter((r) => r.palletNo === 'Pallet 1');
+  const cp2 = caseC.filter((r) => r.palletNo === 'Pallet 2');
+  assert.equal(cp1.reduce((s, r) => s + r.cartonCount, 0), 60);
+  assert.equal(cp1.length, 2, 'Pallet 1 fills 60 cartons using only 2 product types (45 + 15)');
+  assert.equal(cp2.reduce((s, r) => s + r.cartonCount, 0), 47);
+  assert.equal(caseC.reduce((s, r) => s + r.qty, 0), (45 + 30 + 20 + 12) * 100);
+
+  // Case D: Shared half-carton group + full pallet + 59-carton remainder
+  const caseD = buildPackingListDisplayRows(
+    [
+      mkItem('d1', 'D-HALF1', 1, 200, 'mix-1', 100),
+      mkItem('d2', 'D-HALF2', 1, 200, 'mix-1', 100),
+      mkItem('d3', 'D-FULL60', 60),
+      mkItem('d4', 'D-REM59', 59),
+    ],
+    [],
+  );
+  assert.equal(caseD[0].palletNo, 'Pallet 1');
+  assert.equal(caseD[0].itemNo, 3);
+  assert.equal(caseD[0].ctnNo, '1 - 60');
+  assert.equal(caseD[1].palletNo, 'Pallet 2');
+  assert.equal(caseD[1].ctnNo, '61');
+  assert.equal(caseD[2].palletNo, 'Pallet 2');
+  assert.equal(caseD[2].isSubRowInSameCtn, true);
+  assert.equal(caseD[3].palletNo, 'Pallet 2');
+  assert.equal(caseD[3].ctnNo, '62 - 120');
+
+  // Case E: Decimal carton counts (no rounding): 12.5 + 47.5 = 60 exact after 60-carton full pallet
+  const caseE = buildPackingListDisplayRows(
+    [
+      mkItem('e1', 'E-12.5', 12.5),
+      mkItem('e2', 'E-60', 60),
+      mkItem('e3', 'E-47.5', 47.5),
+    ],
+    [],
+  );
+  assert.equal(caseE[0].palletNo, 'Pallet 1');
+  assert.equal(caseE[0].itemNo, 2);
+  assert.equal(caseE[1].palletNo, 'Pallet 2');
+  assert.equal(caseE[1].cartonCount, 12.5);
+  assert.equal(caseE[2].palletNo, 'Pallet 2');
+  assert.equal(caseE[2].cartonCount, 47.5);
+});
+
 

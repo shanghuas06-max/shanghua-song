@@ -94,25 +94,54 @@ const CURRENCY_UNIT_NAMES: Record<
   CNY: { major: 'CHINESE YUAN (RMB)', minor: 'FEN', prefix: 'CNY ' },
 };
 
+const DIGIT_WORDS = [
+  'ZERO',
+  'ONE',
+  'TWO',
+  'THREE',
+  'FOUR',
+  'FIVE',
+  'SIX',
+  'SEVEN',
+  'EIGHT',
+  'NINE',
+];
+
+function digitsToWords(digits: string): string {
+  return digits
+    .split('')
+    .map((d) => DIGIT_WORDS[Number(d)] ?? d)
+    .join(' ');
+}
+
 export function numberToContractWords(
   amount: number,
   currency: CurrencyCode,
 ): string {
-  const safe = Math.max(0, Number.isFinite(amount) ? amount : 0);
+  const safe = Math.max(0, Number.isFinite(amount) ? Number(amount.toPrecision(12)) : 0);
   const meta = CURRENCY_UNIT_NAMES[currency];
-  if (currency === 'JPY') {
-    const whole = Math.round(safe);
-    return `${meta.prefix}${integerToEnglishWords(whole)} ${meta.major} ONLY.`;
-  }
-  const roundedCents = Math.round(safe * 100);
-  const whole = Math.floor(roundedCents / 100);
-  const cents = roundedCents % 100;
+  const rawStr = String(safe);
+  const dotIdx = rawStr.indexOf('.');
+  const whole = dotIdx >= 0 ? Number(rawStr.slice(0, dotIdx)) || 0 : Math.floor(safe);
+  const fracStr = dotIdx >= 0 ? rawStr.slice(dotIdx + 1) : '';
   const wholeWords = integerToEnglishWords(whole);
-  if (cents > 0) {
+
+  if (currency === 'JPY') {
+    if (fracStr.length > 0 && Number(fracStr) > 0) {
+      return `${meta.prefix}${wholeWords} POINT ${digitsToWords(fracStr)} ${meta.major} ONLY.`;
+    }
+    return `${meta.prefix}${wholeWords} ${meta.major} ONLY.`;
+  }
+
+  if (fracStr.length === 0 || Number(fracStr) === 0) {
+    return `${meta.prefix}${wholeWords} ${meta.major} ONLY.`;
+  }
+  if (fracStr.length <= 2) {
+    const cents = Number(fracStr.padEnd(2, '0'));
     const centWords = integerToEnglishWords(cents);
     return `${meta.prefix}${wholeWords} ${meta.major} AND ${centWords} ${meta.minor} ONLY.`;
   }
-  return `${meta.prefix}${wholeWords} ${meta.major} ONLY.`;
+  return `${meta.prefix}${wholeWords} POINT ${digitsToWords(fracStr)} ${meta.major} ONLY.`;
 }
 
 export function createDefaultContractSettings(): ContractSettings {

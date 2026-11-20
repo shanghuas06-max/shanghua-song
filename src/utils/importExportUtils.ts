@@ -16,9 +16,10 @@ import type {
 } from '../types/erp';
 import {
   calculateOrderSummary,
+  cleanFloat,
+  formatNumberNoRound,
   getDefaultExchangeRate,
   resolveEffectiveExchangeRate,
-  roundByCurrency,
 } from './exportCalculations';
 import {
   buildPackingListDisplayRows,
@@ -104,10 +105,10 @@ export function convertJpyToCurrency(
 ): number {
   const safeJpy = Number.isFinite(jpyAmount) ? jpyAmount : 0;
   if (targetCurrency === 'JPY') {
-    return roundByCurrency(safeJpy, 'JPY');
+    return cleanFloat(safeJpy);
   }
   const rate = resolveEffectiveExchangeRate(targetCurrency, exchangeRate);
-  return roundByCurrency(safeJpy / rate, targetCurrency);
+  return cleanFloat(safeJpy / rate);
 }
 
 export function convertPriceToJpy(
@@ -182,11 +183,9 @@ export function resolveCustomerProductPricing(
     unitPrice = rawPrice;
   } else if (targetCurrency === 'JPY') {
     unitPrice =
-      productCurrency === 'JPY'
-        ? roundByCurrency(rawPrice, 'JPY')
-        : roundByCurrency(basePriceJpy, 'JPY');
+      productCurrency === 'JPY' ? rawPrice : cleanFloat(basePriceJpy);
   } else if (targetCurrency === productCurrency) {
-    unitPrice = roundByCurrency(rawPrice, targetCurrency);
+    unitPrice = rawPrice;
   } else {
     unitPrice = convertJpyToCurrency(basePriceJpy, targetCurrency, exchangeRate);
   }
@@ -563,7 +562,7 @@ export function mapImportedProductRows(
       tieredPrices: existing?.tieredPrices ?? [],
       unitNetWeightKg: nwRes.value,
       unitGrossWeightKg: gwRes.value,
-      defaultUnitsPerCarton: Math.max(1, Math.round(pcsRes.value)),
+      defaultUnitsPerCarton: Math.max(1, pcsRes.value),
       cartonLengthCm: existing?.cartonLengthCm ?? 33,
       cartonWidthCm: existing?.cartonWidthCm ?? 25,
       cartonHeightCm: existing?.cartonHeightCm ?? 12,
@@ -761,12 +760,36 @@ function getModeFreightLabel(mode: TransportMode): string {
   }
 }
 
+function countNumberDecimals(val: unknown): number {
+  const num = Number(val);
+  if (!Number.isFinite(num)) return 0;
+  const str = String(cleanFloat(num));
+  const expMatch = str.match(/e-(\d+)$/i);
+  if (expMatch) {
+    const basePart = str.split(/e/i)[0].split('.')[1] ?? '';
+    return Number(expMatch[1]) + basePart.length;
+  }
+  const dotIdx = str.indexOf('.');
+  return dotIdx >= 0 ? str.length - dotIdx - 1 : 0;
+}
+
+function excelNumFmtForCell(
+  sheet: XlsxTypes.WorkSheet,
+  r: number,
+  c: number,
+  minDecimals = 0,
+  useGrouping = true,
+): string {
+  const cell = sheet[XLSX.utils.encode_cell({ r, c })] as
+    | XlsxTypes.CellObject
+    | undefined;
+  const dec = Math.min(10, Math.max(minDecimals, countNumberDecimals(cell?.v)));
+  const intPart = useGrouping ? '#,##0' : '0';
+  return dec > 0 ? `${intPart}.${'0'.repeat(dec)}` : intPart;
+}
+
 function formatWeight1(kg: number): string {
-  const safe = Number.isFinite(kg) ? kg : 0;
-  return safe.toLocaleString('en-US', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
+  return formatNumberNoRound(kg, 1);
 }
 
 function buildPartyExcelLines(
@@ -1110,8 +1133,8 @@ export function buildFormalDocumentWorkbook(
       specs.surfaceFinish,
       formatCompactHsCode(item.hsCode),
       item.quantity,
-      Number((item.unitNetWeightKg || 0).toFixed(4)),
-      Number((calc?.netWeightKg ?? 0).toFixed(1)),
+      cleanFloat(item.unitNetWeightKg || 0),
+      cleanFloat(calc?.netWeightKg ?? 0),
       item.unitPrice,
       calc?.amount ?? 0,
     ]);
@@ -1125,7 +1148,7 @@ export function buildFormalDocumentWorkbook(
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = footnotes[0] ?? '';
     row[6] = summary.totalQuantity;
-    row[8] = Number(summary.totalNetWeightKg.toFixed(1));
+    row[8] = cleanFloat(summary.totalNetWeightKg);
     invAoa.push(row);
     invRowHeights[invSubtotalRow] = { hpt: 16 };
     invMerges.push({ s: { r: invSubtotalRow, c: 0 }, e: { r: invSubtotalRow, c: 5 } });
@@ -1242,7 +1265,7 @@ export function buildFormalDocumentWorkbook(
     row[0] = getDocOverride(
       order,
       'inv.volumeSummary',
-      `Vol. : approx. ${summary.totalCbm.toFixed(3)}M3`,
+      `Vol. : approx. ${formatNumberNoRound(summary.totalCbm, 3)}M3`,
     );
     row[8] = `COUNTRY OF ORIGIN : ${originCountry}`;
     invAoa.push(row);
@@ -1424,35 +1447,47 @@ export function buildFormalDocumentWorkbook(
         r,
         6,
         { alignment: { horizontal: 'right' } },
-        '#,##0',
+        excelNumFmtForCell(invoiceSheet, r, 6, 0, true),
       );
       applyCellStyle(
         invoiceSheet,
         r,
         7,
         { alignment: { horizontal: 'right' } },
-        '0.0000',
+        excelNumFmtForCell(invoiceSheet, r, 7, 0, false),
       );
       applyCellStyle(
         invoiceSheet,
         r,
         8,
         { alignment: { horizontal: 'right' } },
-        '#,##0.0',
+        excelNumFmtForCell(invoiceSheet, r, 8, 1, true),
       );
       applyCellStyle(
         invoiceSheet,
         r,
         9,
         { alignment: { horizontal: 'right' } },
-        order.currency === 'JPY' ? '#,##0' : '#,##0.00',
+        excelNumFmtForCell(
+          invoiceSheet,
+          r,
+          9,
+          order.currency === 'JPY' ? 0 : 2,
+          true,
+        ),
       );
       applyCellStyle(
         invoiceSheet,
         r,
         10,
         { alignment: { horizontal: 'right' } },
-        order.currency === 'JPY' ? '#,##0' : '#,##0.00',
+        excelNumFmtForCell(
+          invoiceSheet,
+          r,
+          10,
+          order.currency === 'JPY' ? 0 : 2,
+          true,
+        ),
       );
     }
   }
@@ -1460,12 +1495,12 @@ export function buildFormalDocumentWorkbook(
   applyCellStyle(invoiceSheet, invSubtotalRow, 6, {
     font: { bold: true },
     alignment: { horizontal: 'right' },
-    numFmt: '#,##0',
+    numFmt: excelNumFmtForCell(invoiceSheet, invSubtotalRow, 6, 0, true),
   });
   applyCellStyle(invoiceSheet, invSubtotalRow, 8, {
     font: { bold: true },
     alignment: { horizontal: 'right' },
-    numFmt: '#,##0.0',
+    numFmt: excelNumFmtForCell(invoiceSheet, invSubtotalRow, 8, 1, true),
   });
   for (let r = invCostStartRow; r < invFinalTotalRow; r++) {
     applyCellStyle(invoiceSheet, r, 6, {
@@ -1686,8 +1721,8 @@ export function buildFormalDocumentWorkbook(
       dRow.surfaceFinish,
       `${dRow.setsPerCarton.toLocaleString()} ${dRow.unitLabel} x ${dRow.cartonCount} carton`,
       dRow.qty,
-      Number((dRow.unitWeightKg || 0).toFixed(4)),
-      Number((dRow.totalWeightKg || 0).toFixed(1)),
+      cleanFloat(dRow.unitWeightKg || 0),
+      cleanFloat(dRow.totalWeightKg || 0),
     ]);
     plRowHeights[r] = { hpt: plTypeCell.includes('\n') ? 26 : 17 };
   });
@@ -1715,8 +1750,8 @@ export function buildFormalDocumentWorkbook(
     const row = new Array(11).fill('') as (string | number)[];
     row[0] = footnotes.join(' | ');
     row[7] = `${plTotalCartons} cartons`;
-    row[8] = plTotalQty;
-    row[10] = Number(plTotalTw.toFixed(1));
+    row[8] = cleanFloat(plTotalQty);
+    row[10] = cleanFloat(plTotalTw);
     plAoa.push(row);
     plRowHeights[plSummaryRow] = { hpt: 18 };
     plMerges.push({ s: { r: plSummaryRow, c: 0 }, e: { r: plSummaryRow, c: 6 } });
@@ -1768,7 +1803,7 @@ export function buildFormalDocumentWorkbook(
     getDocOverride(
       order,
       'pl.volumeSummary',
-      `Vol. : approx. ${summary.totalCbm.toFixed(3)}M3`,
+      `Vol. : approx. ${formatNumberNoRound(summary.totalCbm, 3)}M3`,
     ),
     0,
     7,
@@ -1913,9 +1948,27 @@ export function buildFormalDocumentWorkbook(
       applyCellStyle(packingSheet, r, 2, { alignment: { horizontal: 'center' } });
       applyCellStyle(packingSheet, r, 3, { font: { bold: true } });
       applyCellStyle(packingSheet, r, 6, { alignment: { horizontal: 'center' } });
-      applyCellStyle(packingSheet, r, 8, { alignment: { horizontal: 'right' } }, '#,##0');
-      applyCellStyle(packingSheet, r, 9, { alignment: { horizontal: 'right' } }, '0.0000');
-      applyCellStyle(packingSheet, r, 10, { alignment: { horizontal: 'right' } }, '#,##0.0');
+      applyCellStyle(
+        packingSheet,
+        r,
+        8,
+        { alignment: { horizontal: 'right' } },
+        excelNumFmtForCell(packingSheet, r, 8, 0, true),
+      );
+      applyCellStyle(
+        packingSheet,
+        r,
+        9,
+        { alignment: { horizontal: 'right' } },
+        excelNumFmtForCell(packingSheet, r, 9, 0, false),
+      );
+      applyCellStyle(
+        packingSheet,
+        r,
+        10,
+        { alignment: { horizontal: 'right' } },
+        excelNumFmtForCell(packingSheet, r, 10, 1, true),
+      );
     }
   }
   applyCellStyle(packingSheet, plSummaryRow, 7, {
@@ -1925,12 +1978,12 @@ export function buildFormalDocumentWorkbook(
   applyCellStyle(packingSheet, plSummaryRow, 8, {
     font: { bold: true },
     alignment: { horizontal: 'right' },
-    numFmt: '#,##0',
+    numFmt: excelNumFmtForCell(packingSheet, plSummaryRow, 8, 0, true),
   });
   applyCellStyle(packingSheet, plSummaryRow, 10, {
     font: { bold: true },
     alignment: { horizontal: 'right' },
-    numFmt: '#,##0.0',
+    numFmt: excelNumFmtForCell(packingSheet, plSummaryRow, 10, 1, true),
   });
   applyCellStyle(packingSheet, plOriginRow, 8, {
     font: { bold: true, underline: true },
@@ -2336,20 +2389,38 @@ export function buildFormalDocumentWorkbook(
     });
     for (let r = ctDataStart; r <= ctDataEnd; r++) {
       applyCellStyle(contractSheet, r, 0, { alignment: { horizontal: 'center' } });
-      applyCellStyle(contractSheet, r, 4, { alignment: { horizontal: 'right' } }, '#,##0');
+      applyCellStyle(
+        contractSheet,
+        r,
+        4,
+        { alignment: { horizontal: 'right' } },
+        excelNumFmtForCell(contractSheet, r, 4, 0, true),
+      );
       applyCellStyle(
         contractSheet,
         r,
         5,
         { alignment: { horizontal: 'right' } },
-        order.currency === 'JPY' ? '#,##0' : '#,##0.00',
+        excelNumFmtForCell(
+          contractSheet,
+          r,
+          5,
+          order.currency === 'JPY' ? 0 : 2,
+          true,
+        ),
       );
       applyCellStyle(
         contractSheet,
         r,
         6,
         { alignment: { horizontal: 'right' } },
-        order.currency === 'JPY' ? '#,##0' : '#,##0.00',
+        excelNumFmtForCell(
+          contractSheet,
+          r,
+          6,
+          order.currency === 'JPY' ? 0 : 2,
+          true,
+        ),
       );
     }
   }

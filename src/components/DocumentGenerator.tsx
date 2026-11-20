@@ -30,6 +30,7 @@ import type { UiDictionary } from '../i18n/uiTranslations';
 import { DOC_TEXT, type DocDictionary } from '../i18n/docTranslations';
 import {
   calculateOrderSummary,
+  formatNumberNoRound,
   resolveEffectiveExchangeRate,
 } from '../utils/exportCalculations';
 import {
@@ -115,11 +116,7 @@ function getShortPlace(place: string | undefined): string {
 }
 
 function formatWeight1(kg: number): string {
-  const safe = Number.isFinite(kg) ? kg : 0;
-  return safe.toLocaleString('en-US', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
+  return formatNumberNoRound(kg, 1);
 }
 
 function getOverride(
@@ -1407,7 +1404,7 @@ const InvoiceSheet: React.FC<
                     {item.quantity.toLocaleString()}
                   </td>
                   <td className="border border-black px-1.5 py-0.5 text-right whitespace-nowrap">
-                    {(item.unitNetWeightKg || 0).toFixed(4)}
+                    {formatNumberNoRound(item.unitNetWeightKg || 0, 0)}
                   </td>
                   <td className="border border-black px-1.5 py-0.5 text-right whitespace-nowrap">
                     {formatWeight1(calc?.netWeightKg ?? 0)}
@@ -1516,7 +1513,7 @@ const InvoiceSheet: React.FC<
             <EditableText
               order={order}
               fieldKey="inv.volumeSummary"
-              fallback={`Vol. : approx. ${summary.totalCbm.toFixed(3)}M3`}
+              fallback={`Vol. : approx. ${formatNumberNoRound(summary.totalCbm, 3)}M3`}
               onCommit={onCommitOverride}
             />
           </div>
@@ -1873,7 +1870,7 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
                   <td
                     className={`${cellBorder} px-1.5 py-0.5 text-right whitespace-nowrap`}
                   >
-                    {(row.unitWeightKg || 0).toFixed(4)}
+                    {formatNumberNoRound(row.unitWeightKg || 0, 0)}
                   </td>
                   <td
                     className={`${cellBorder} px-1.5 py-0.5 text-right whitespace-nowrap`}
@@ -1946,7 +1943,7 @@ const PackingListSheet: React.FC<SheetCommonProps> = ({
             <EditableText
               order={order}
               fieldKey="pl.volumeSummary"
-              fallback={`Vol. : approx. ${summary.totalCbm.toFixed(3)}M3`}
+              fallback={`Vol. : approx. ${formatNumberNoRound(summary.totalCbm, 3)}M3`}
               onCommit={onCommitOverride}
             />
           </div>
@@ -2576,7 +2573,7 @@ const CaseMarkSheet: React.FC<
             {d.netWeight}
           </div>
           <div className="font-mono-tabular font-bold text-slate-900 mt-0.5">
-            {summary.totalNetWeightKg.toFixed(1)} kg
+            {formatWeight1(summary.totalNetWeightKg)} kg
           </div>
         </div>
         <div>
@@ -2584,7 +2581,7 @@ const CaseMarkSheet: React.FC<
             {d.grossWeight}
           </div>
           <div className="font-mono-tabular font-bold text-slate-900 mt-0.5">
-            {summary.totalGrossWeightKg.toFixed(1)} kg
+            {formatWeight1(summary.totalGrossWeightKg)} kg
           </div>
         </div>
         <div>
@@ -2592,7 +2589,7 @@ const CaseMarkSheet: React.FC<
             {d.measurement}
           </div>
           <div className="font-mono-tabular font-bold text-slate-900 mt-0.5">
-            {summary.totalCbm.toFixed(3)} m³
+            {formatNumberNoRound(summary.totalCbm, 3)} m³
           </div>
         </div>
       </div>

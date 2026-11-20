@@ -145,11 +145,11 @@ export function sanitizePriceTiers(tiers: unknown): PriceTier[] {
   for (const t of tiers) {
     if (!t || typeof t !== 'object') continue;
     const rawMin = nonNegNum((t as { minQty?: unknown }).minQty, 0);
-    const minQty = Math.max(1, Math.round(rawMin));
+    const minQty = rawMin > 0 ? rawMin : 1;
     const rawMax = (t as { maxQty?: unknown }).maxQty;
     let maxQty: number | null = null;
     if (rawMax !== null && rawMax !== undefined && rawMax !== '') {
-      const parsedMax = Math.round(nonNegNum(rawMax, minQty));
+      const parsedMax = nonNegNum(rawMax, minQty);
       maxQty = Math.max(minQty, parsedMax);
     }
     const unitPrice = nonNegNum((t as { unitPrice?: unknown }).unitPrice, 0);
@@ -540,7 +540,7 @@ export function sanitizeOrderPayload(o: ExportOrder, ownerId: string) {
     itemHeader: clampStr(o.itemHeader, BLUEPRINT_LIMITS.MEDIUM_MAX),
     palletCount: nonNegNum(o.palletCount, 0),
     emptyCartons: nonNegNum(o.emptyCartons, 0),
-    cartonsPerLayer: Math.max(1, Math.round(nonNegNum(o.cartonsPerLayer, 12))),
+    cartonsPerLayer: Math.max(1, nonNegNum(o.cartonsPerLayer, 12)),
     palletVolumeDetails: clampStr(o.palletVolumeDetails, BLUEPRINT_LIMITS.LONG_MAX),
     surfaceFootnotes: clampStr(o.surfaceFootnotes, BLUEPRINT_LIMITS.LONG_MAX),
     packingRows: safePackingRows,

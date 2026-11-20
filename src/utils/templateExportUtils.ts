@@ -16,6 +16,7 @@ import type {
 } from '../types/erp';
 import {
   calculateOrderSummary,
+  cleanFloat,
   resolveEffectiveExchangeRate,
 } from './exportCalculations';
 import {
@@ -192,8 +193,8 @@ export function buildTemplateDataContext(
       amount: calc?.amount ?? 0,
       amountFormatted: formatDocMoney(calc?.amount ?? 0, order.currency),
       cartons: item.cartons,
-      netWeightKg: Number((calc?.netWeightKg ?? 0).toFixed(1)),
-      grossWeightKg: Number((calc?.grossWeightKg ?? 0).toFixed(1)),
+      netWeightKg: cleanFloat(calc?.netWeightKg ?? 0),
+      grossWeightKg: cleanFloat(calc?.grossWeightKg ?? 0),
     };
   });
 
@@ -239,9 +240,9 @@ export function buildTemplateDataContext(
     totalCartons: summary.totalCartons,
     palletCount: order.palletCount ?? 0,
     emptyCartons: order.emptyCartons ?? 0,
-    totalNetWeight: Number(summary.totalNetWeightKg.toFixed(1)),
-    totalGrossWeight: Number(summary.totalGrossWeightKg.toFixed(1)),
-    totalCbm: Number(summary.totalCbm.toFixed(3)),
+    totalNetWeight: cleanFloat(summary.totalNetWeightKg),
+    totalGrossWeight: cleanFloat(summary.totalGrossWeightKg),
+    totalCbm: cleanFloat(summary.totalCbm),
     exwTotal: formatDocMoney(summary.exwTotal, order.currency),
     freightTotal: formatDocMoney(freightTotal, order.currency),
     totalAmount: formatDocMoney(summary.incotermTotal, order.currency),
